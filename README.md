@@ -87,6 +87,15 @@ schema, database session management, tests): see
 [docs/04-BACKEND-PERSISTENCE.md](docs/04-BACKEND-PERSISTENCE.md). Run the
 test suite with `python -m pytest tests` from `apps/api`.
 
+Database migrations are managed with **Alembic** (configuration and rules in
+[docs/05-DATABASE-MIGRATIONS.md](docs/05-DATABASE-MIGRATIONS.md)). With
+`DATABASE_URL` configured and PostgreSQL running, from `apps/api`:
+
+```bash
+alembic upgrade head    # apply all pending migrations
+alembic check           # verify database matches the models
+```
+
 ### Frontend (Next.js)
 
 ```bash
