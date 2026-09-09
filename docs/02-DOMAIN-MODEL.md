@@ -1,7 +1,7 @@
 # 02 — Domain & Data Model Foundation
 
 **Project:** Ketabdaneh
-**Document status:** Initial conceptual model — pending review & approval before any implementation.
+**Document status:** Conceptual model — three initial MVP decisions approved (§1.1); remaining TBDs pending review.
 **Last reviewed:** 2026-09-09
 **Depends on:** [00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md), [01-ARCHITECTURE.md](01-ARCHITECTURE.md)
 
@@ -17,10 +17,25 @@ initial domain/data model foundation, so that:
 - The boundary between *confirmed knowledge* and *assumption* stays explicit.
 
 > **Modeling rule for this document:** no business rule is invented. Anything
-> not confirmed in discovery is marked **TBD** and must be resolved with the
-> branch manager/domain experts before the corresponding piece is implemented.
-> TBD identifiers here extend the A-series from
-> [00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md) §7.
+> not confirmed in discovery or approved as a decision is marked **TBD** and
+> must be resolved with the branch manager/domain experts before the
+> corresponding piece is implemented. TBD identifiers here extend the A-series
+> from [00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md) §7.
+
+## 1.1 Approved Decisions (MVP)
+
+The following decisions have been **explicitly approved** for the current MVP.
+They are final for now and may be revisited later if the real business
+requires it.
+
+| ID | Decision |
+| --- | --- |
+| **D-001** | A Person **may hold multiple permanent organizational roles simultaneously**. |
+| **D-002** | The initial Event status set is exactly: **DRAFT, SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED**. |
+| **D-003** | EventReport is **optional**: an Event has **zero or one** EventReport. A completed Event may have a report, but a report is not mandatory. |
+
+These are the only approved domain decisions so far. Everything not covered
+by them remains TBD (§7).
 
 ---
 
@@ -33,17 +48,20 @@ A human member of the branch.
 **Known conceptual attributes** (examples of known concepts — not a final field list):
 
 | Concept | Notes |
-|---|---|
+| --- | --- |
 | Name | Known concept. Exact format (single field vs. first/last) **TBD-D1**. |
 | Phone | Known concept. Uniqueness rules **TBD-D2**. |
-| Role(s) | Which role(s) the person holds (see §3). |
+| Role(s) | Which role(s) the person holds (see §3). **Approved (D-001):** a Person may hold multiple roles simultaneously. |
 | Active/inactive state | Known concept: a person can be active or inactive. Exact semantics (e.g., can an inactive person appear in new assignments?) **TBD-D3**. |
 
 **Constraints / open questions:**
 
-- Whether one Person can hold **multiple roles simultaneously** is unresolved
-  (00-PROJECT-CONTEXT A1) → **TBD-A1**. The model must not assume either answer.
+- **[RESOLVED — D-001]** One Person **may hold multiple roles simultaneously**
+  (approved MVP decision). The data representation of roles — enum, JSON,
+  join table, or other — is a **later schema decision** and remains
+  **TBD-D22**.
 - No role-transition rules exist (e.g., learner → supporter) → **TBD-D4**.
+  Do not invent any.
 
 ### 2.2 Event
 
@@ -52,17 +70,30 @@ An activity of the branch, planned in advance — commonly for the following wee
 **Known conceptual attributes:**
 
 | Concept | Notes |
-|---|---|
+| --- | --- |
 | Type/category | Known examples: introduction/orientation session, film analysis, book analysis, gathering, group games, class. The list is **not final** — a closed taxonomy is **TBD-D5**. |
 | Planned date/time | Known concept (scheduled in advance, usually weekly). Whether events repeat/recurrence is modeled natively or as separate instances is **TBD-D6**. |
+| Status | **Approved (D-002)** initial status set: `DRAFT`, `SCHEDULED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED` (see below). |
 | People assigned to responsibilities | Via EventAssignment (see §2.3). |
 
-**Status semantics:** an event clearly moves through some life
-(scheduled → … → completed → reported), but the **complete event status machine
-is not confirmed** → **TBD-D7**. In particular:
+**Status lifecycle (approved initial concept — D-002):**
 
-- Who may mark an event complete, and what "complete" means exactly (A8).
-- What states exist between "scheduled" and "completed".
+```text
+DRAFT → SCHEDULED → IN_PROGRESS → COMPLETED
+                 └──────────────→ CANCELLED
+```
+
+- `COMPLETED` and `CANCELLED` are **terminal states**.
+- These five statuses are the exact initial set for the current MVP — no
+  additional statuses (e.g., a "REPORTED" status) are introduced.
+- **Who may perform each transition (authorization) remains TBD-D23.**
+- The exact transition graph (e.g., from which states an event may be
+  cancelled, whether DRAFT → SCHEDULED requires assignments to exist) is
+  **not confirmed beyond the sequence shown** — details **TBD-D7 (narrowed)**:
+  the status *set* is approved; the allowed-transition matrix is not.
+
+**Status semantics note:** what "completed" *means* operationally (A8) is
+still open — the approved set gives the states, not their entry conditions.
 
 ### 2.3 EventAssignment
 
@@ -104,7 +135,7 @@ An operational task.
 **Known conceptual attributes:**
 
 | Concept | Notes |
-|---|---|
+| --- | --- |
 | Assignee | A Person the task is assigned to (confirmed). |
 | Completion state | A task can be marked complete (confirmed). Who marks it complete is **TBD-A10**. |
 | Cadence | daily / weekly / monthly / event-based (confirmed categories). |
@@ -144,11 +175,15 @@ so the manager can see the outcome **remotely**.
 - It records results/outcome.
 - Its primary reader is the manager.
 
-**TBD:**
+**[RESOLVED — D-003] Optionality:** EventReport is **optional**. An Event has
+**zero or one** EventReport (`Event 0..1 EventReport`). A completed Event may
+have a report, but a report is **not mandatory** for any Event.
+
+**TBD (unchanged):**
 
 - Exact fields (free text? structured? attendance?) (A9 → **TBD-A9**).
 - Who may create/edit it (presumably an assignee, but which one — any assignee? a specific one?) **TBD-D19**.
-- Whether it is required for every event **TBD-D20**.
+- ~~Is an EventReport required for every event~~ **RESOLVED — D-003: not required.**
 - Whether the manager can respond/acknowledge it **TBD-D21**.
 
 ---
@@ -159,7 +194,7 @@ Permanent organizational roles a person can hold (confirmed list, semantics per
 [00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md)):
 
 | Role | Notes |
-|---|---|
+| --- | --- |
 | Learner / Student | — |
 | Supporter | Related to the Availability concept |
 | Coach | — |
@@ -168,16 +203,18 @@ Permanent organizational roles a person can hold (confirmed list, semantics per
 | Manager | The primary user; approves assignments, consumes reports |
 
 **Modeling stance:** roles are modeled as a concept distinct from event
-responsibilities. Whether the data representation is one enum, a set of
-role-records, or something richer is an implementation decision (**TBD-D22**)
-to be made at schema time — *after* TBD-A1 (multi-role) is resolved.
+responsibilities. **[Approved — D-001]** a Person may hold multiple roles
+simultaneously — at the conceptual level a Person has a *set of roles*.
+Whether the data representation is one enum, a set of role-records, a join
+table, or something richer is a **later schema decision** (**TBD-D22**) —
+not to be decided now.
 
 ---
 
 ## 4. Entity Responsibilities (conceptual)
 
 | Entity | Its job in the domain |
-|---|---|
+| --- | --- |
 | Person | Identifies a branch member and their permanent role(s). |
 | Event | Represents a planned branch activity. |
 | EventAssignment | Links a person to an operational responsibility on one event. |
@@ -189,15 +226,17 @@ to be made at schema time — *after* TBD-A1 (multi-role) is resolved.
 
 ## 5. Relationships (conceptual)
 
-```
+```text
 Person
   ├── participates in EventAssignment (a person can be assigned to events)
   ├── may receive Task (a task is assigned to a person)
-  └── may provide Availability (a supporter declares time slots)
+  ├── may provide Availability (a supporter declares time slots)
+  └── holds a set of permanent roles (multiple roles allowed — D-001)
 
 Event
   ├── has EventAssignment(s) (one or more)
-  └── may have EventReport (after completion)
+  ├── has exactly one status: DRAFT | SCHEDULED | IN_PROGRESS | COMPLETED | CANCELLED (D-002)
+  └── has 0..1 EventReport (optional — D-003)
 
 Task
   └── is assigned to Person
@@ -212,20 +251,20 @@ erDiagram
     PERSON ||--o{ TASK : "receives"
     PERSON ||--o{ AVAILABILITY : "provides"
     EVENT ||--o{ EVENT_ASSIGNMENT : "has"
-    EVENT ||--o| EVENT_REPORT : "may have"
+    EVENT ||--o| EVENT_REPORT : "has 0..1 (optional, D-003)"
     TASK }o--|| PERSON : "assigned to"
     TASK }o--o| EVENT : "event-based (TBD)"
 
     PERSON {
         string name
         string phone
-        roles roles "TBD multi-role (A1)"
+        string-set roles "multiple simultaneous roles (D-001); representation TBD-D22"
         boolean active
     }
     EVENT {
         string type "examples only, TBD-D5"
         datetime plannedAt
-        status status "TBD-D7"
+        status status "DRAFT|SCHEDULED|IN_PROGRESS|COMPLETED|CANCELLED (D-002)"
     }
     EVENT_ASSIGNMENT {
         string responsibility "examples only, TBD-D9"
@@ -243,11 +282,10 @@ erDiagram
     }
 ```
 
-*(Cardinalities on TBD edges are provisional and follow only what is confirmed:
-one event → many assignments; one person → many tasks/assignments/availabilities;
-one event → at most one report is the natural reading of "a result may be
-recorded", but strictly this too is **TBD-D20**-adjacent — treat "0..1" as
-provisional.)*
+*(Conceptual only — `string-set roles` denotes "a set of roles, multiple
+allowed (D-001)" and deliberately does not choose a database representation.
+Cardinalities otherwise follow only what is confirmed/approved: one event →
+many assignments; one event → **exactly 0..1 report (D-003)**.)*
 
 ---
 
@@ -265,45 +303,50 @@ These are the rules actually confirmed in discovery — the complete list of
 7. The manager consumes results remotely (main need: visibility without involvement).
 8. Supporters can declare **availability/time slots**.
 9. Events are scheduled in advance, usually based on a weekly schedule.
+10. **[D-001]** A Person may hold multiple permanent roles simultaneously.
+11. **[D-002]** Event statuses: DRAFT, SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED.
+12. **[D-003]** An Event has zero or one EventReport; reports are optional.
 
 ---
 
 ## 7. Explicit TBDs / Unresolved Decisions
 
-Domain TBDs introduced by this document (D-series), alongside the A-series
-from [00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md) §7:
+Domain TBDs (D-series), alongside the A-series from
+[00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md) §7. Items struck through were
+resolved by an approved decision (§1.1).
 
-| # | Question |
-|---|---|
-| TBD-D1 | Person name format (single field vs. parts) |
-| TBD-D2 | Phone uniqueness / contact rules |
-| TBD-D3 | Semantics of active/inactive (assignments of inactive people?) |
-| TBD-D4 | Role-transition rules (none known — do they exist?) |
-| TBD-D5 | Final event-type taxonomy |
-| TBD-D6 | Recurring events: modeled natively or as separate instances |
-| TBD-D7 | Complete event status machine; what "complete" means; who completes |
-| TBD-D8 | Role-based restrictions on event responsibilities |
-| TBD-D9 | Responsibility taxonomy: fixed list, free text, or templates |
-| TBD-D10 | Assignment approval states |
-| TBD-D11 | Exclusivity: one person per responsibility per event? |
-| TBD-D12 | Which tasks require approval/review |
-| TBD-D13 | Task approval/review state machine |
-| TBD-D14 | Event↔task linkage semantics |
-| TBD-D15 | Availability recurring vs. one-off |
-| TBD-D16 | Availability tied to specific week vs. general |
-| TBD-D17 | Availability mandatory or optional |
-| TBD-D18 | Availability conflict resolution rules |
-| TBD-D19 | Who may create/edit an EventReport |
-| TBD-D20 | Is an EventReport required for every event |
-| TBD-D21 | Manager response/acknowledgment of reports |
-| TBD-D22 | Role data representation (implementation-level, decide at schema time) |
-| TBD-A1 | (inherited) Multi-role persons |
-| TBD-A3/A4 | (inherited) Availability semantics/usage |
-| TBD-A6 | (inherited) Approval scope of assignments |
-| TBD-A7 | (inherited) What counts as an "important exception" |
-| TBD-A8 | (inherited) Completing an event — who/what |
-| TBD-A9 | (inherited) EventReport content/structure |
-| TBD-A10 | (inherited) Task completion — who; deadlines/reminders |
+| # | Question | Status |
+| --- | --- | --- |
+| TBD-D1 | Person name format (single field vs. parts) | open |
+| TBD-D2 | Phone uniqueness / contact rules | open |
+| TBD-D3 | Semantics of active/inactive (assignments of inactive people?) | open |
+| TBD-D4 | Role-transition rules (none known — do they exist?) | open |
+| TBD-D5 | Final event-type taxonomy | open |
+| TBD-D6 | Recurring events: modeled natively or as separate instances | open |
+| ~~TBD-D7~~ | ~~Complete event status machine; what "complete" means; who completes~~ | **partially resolved by D-002**: the status *set* is approved (DRAFT/SCHEDULED/IN_PROGRESS/COMPLETED/CANCELLED); the allowed-transition matrix, transition authorization, and operational meaning of "completed" remain open |
+| TBD-D8 | Role-based restrictions on event responsibilities | open |
+| TBD-D9 | Responsibility taxonomy: fixed list, free text, or templates | open |
+| TBD-D10 | Assignment approval states | open |
+| TBD-D11 | Exclusivity: one person per responsibility per event? | open |
+| TBD-D12 | Which tasks require approval/review | open |
+| TBD-D13 | Task approval/review state machine | open |
+| TBD-D14 | Event↔task linkage semantics | open |
+| TBD-D15 | Availability recurring vs. one-off | open |
+| TBD-D16 | Availability tied to specific week vs. general | open |
+| TBD-D17 | Availability mandatory or optional | open |
+| TBD-D18 | Availability conflict resolution rules | open |
+| TBD-D19 | Who may create/edit an EventReport | open |
+| ~~TBD-D20~~ | ~~Is an EventReport required for every event~~ | **resolved by D-003: not required; 0..1 per Event** |
+| TBD-D21 | Manager response/acknowledgment of reports | open |
+| TBD-D22 | Role data representation (implementation-level, decide at schema time) | open (D-001 resolved the *semantics*; representation is still a schema decision) |
+| TBD-D23 | Authorization of event status transitions — who may move an event between states (incl. who completes/cancels) | open (new — surfaced by D-002) |
+| ~~TBD-A1~~ | ~~Multi-role persons~~ | **resolved by D-001: multiple simultaneous roles allowed** |
+| TBD-A3/A4 | Availability semantics/usage | open |
+| TBD-A6 | Approval scope of assignments | open |
+| TBD-A7 | What counts as an "important exception" | open |
+| TBD-A8 | Completing an event — operational meaning (status set now fixed by D-002; entry conditions still open) | open |
+| TBD-A9 | EventReport content/structure | open |
+| TBD-A10 | Task completion — who; deadlines/reminders | open |
 
 **Rule:** no schema, endpoint, or UI may hard-code an answer to any TBD above.
 
@@ -319,7 +362,7 @@ In scope for the MVP (per the approved first workflow):
 Mapped to this model:
 
 | Workflow step | Entities involved |
-|---|---|
+| --- | --- |
 | Create Event | Event |
 | Assign Person | EventAssignment (+ manager approval — scope TBD-A6) |
 | Show in Calendar | Event (scheduled date/time) |
