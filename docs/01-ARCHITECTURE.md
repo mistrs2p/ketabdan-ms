@@ -84,6 +84,17 @@ A modular monolith gives:
   document.**
 - Whether any Next.js server-side features (SSR/API routes) are used for anything
   beyond standard page rendering is **TBD** (see §7).
+- **API integration foundation (implemented, Phase 4):** all backend calls go
+  through one typed, fetch-based client in `apps/web/lib/api/` —
+  `client.ts` (base-URL handling from `NEXT_PUBLIC_API_BASE_URL`, JSON
+  headers, shared error path), `types.ts` (hand-maintained contract types
+  matching docs/06 exactly — OpenAPI codegen stays deferred, TBD T3),
+  `errors.ts` (the `ApiError` classification: validation 422 / not-found
+  404 / server / network, preserving FastAPI's `detail` payload), and one
+  module per domain (`roles`, `persons`, `events`, `eventAssignments`,
+  `health`) exporting plain async functions. API modules contain no UI,
+  state, or business decisions (§3.1 rules above). See
+  `apps/web/.env.example` for configuration.
 
 ### 3.2 Backend — FastAPI (Python)
 
