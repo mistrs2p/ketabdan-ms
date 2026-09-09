@@ -96,7 +96,7 @@ tests):
 | Model | Table | Notes |
 | --- | --- | --- |
 | `Person` | `persons` | `name` free text (TBD-D1); `phone` not unique (TBD-D2); `active` default true (TBD-D3 not encoded) |
-| `Role` | `roles` | reference data; `code`/`name` UNIQUE. The six known codes are documented but **not seeded** (future task) |
+| `Role` | `roles` | reference data; `code`/`name` UNIQUE. The six known codes are seeded by migration `0002` (docs/05 §5a) |
 | `PersonRole` | `person_roles` | composite PK `(person_id, role_id)`; `created_at` only (immutable row); index on `role_id` |
 | `Event` | `events` | status `text` + CHECK with the exact D-002 set; default `DRAFT`; `type` free text (TBD-D5); indexes on `planned_at`, `status` |
 | `EventResponsibility` | `event_responsibilities` | `code`/`name` UNIQUE, `active` flag |
@@ -120,7 +120,9 @@ the database's ON DELETE behavior instead of nullifying child FKs.
 
 - **Alembic migrations** — future task; `Base.metadata` is the target.
 - **Task / Availability models** — deferred (docs/03 §13).
-- **Seed data** (six roles, example responsibilities) — future task.
+- **Seed data** (six roles) — seeded by Alembic migration `0002`
+  (docs/05 §5a). Example responsibilities are **not** seeded (taxonomy
+  TBD-D9).
 - Business APIs, CRUD endpoints, auth, calendar/Jalali logic, etc.
 
 ## 8. Validation
