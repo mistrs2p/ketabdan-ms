@@ -194,8 +194,10 @@ admin-managed) remains open under **TBD-D9 (narrowed)**.
 
 **Known behavior:** the manager wants to **approve assignments** (confirmed
 need). Whether *every* assignment requires approval or only certain kinds is
-unresolved (A6) → **TBD-A6**. An approval state may exist on EventAssignment
-(accepted / pending / …) — exact states **TBD-D10**.
+unresolved (A6) → **TBD-A6**. An approval state exists on EventAssignment as
+the provisional `approval_status` attribute — exact states **TBD-D10**. The
+full lifecycle contract (states, transitions, authority, reversal, audit) is
+defined below in **"EventAssignment Approval Lifecycle"**.
 
 **Known multiplicity:** an event can have **one or more** assignments; the same
 responsibility on one event presumably goes to one person, but exclusivity
@@ -211,6 +213,56 @@ seeding, **TBD-D9**) is resolved by **D-004** (seed migration `0003`),
 and the contract carries the remaining open assignment semantics
 (D8, D10/A6, D11, D3, D29, D30) as explicit TBDs — carried by the
 endpoint as documented current behavior, never as invented rules.
+
+### EventAssignment Approval Lifecycle
+
+*(Contract summary — the full API-facing contract lives in
+[06-BACKEND-API.md](06-BACKEND-API.md) §4e. Nothing below adds a business
+rule; every unsupported question stays TBD.)*
+
+**Confirmed facts (repository evidence):**
+
+1. The **manager wants to approve assignments** — a confirmed discovery
+   need (docs/00 §4.2/§5/§7 ✅11). This is the only approval-authority
+   signal anywhere in the project. It is a *domain role* fact; it does
+   **not** establish technical authorization (no auth exists yet,
+   TBD-A13/A11).
+2. **Existence vs approval are separate** (encoded, docs/03 §5.6): the
+   row *is* the assignment; `approval_status` is an *attribute* of it.
+   Approval is never a prerequisite for existence.
+3. Creation always produces `approval_status = PENDING` — this follows
+   from the schema column default, not from a business rule.
+
+**Current (PROVISIONAL) state set** — placeholder values, not decisions:
+
+```text
+PENDING → APPROVED        (implied by the two-value placeholder set;
+                            NO transition is implemented or decided)
+```
+
+- The `('PENDING','APPROVED')` CHECK is explicitly a **provisional
+  two-value starting point** (docs/03 §5.6), chosen because (a) the
+  manager's approval need is confirmed, (b) a nullable/absent column
+  would blur existence-vs-approval, and (c) the set can be widened (e.g.
+  `REJECTED`, `DECLINED`, `REVOKED`) by a simple migration once the real
+  states are decided. **`PENDING → APPROVED` must NOT be assumed to be
+  the final workflow.**
+
+**Unresolved questions — each stays TBD until a business decision:**
+
+| Question | Status |
+| --- | --- |
+| Real approval state set: is `PENDING`/`APPROVED` sufficient, or are `REJECTED`, `CANCELLED`, `REVOKED`, … required? | **TBD-D10** (values are provisional) |
+| Approval *scope*: does every assignment require approval, or only certain kinds? | **TBD-A6** |
+| Approval *authority* (workflow level): manager only? another privileged role? event owner? central organization? (Discovery names only the manager's need; no other authority is documented.) | **TBD-D31** (new — separates the workflow-authority question from D-10's state-set question) |
+| Technical *authorization*: which authenticated caller may perform the transition? (Distinct from the workflow question above; no auth exists yet.) | **TBD-A13/A11** (unchanged) |
+| Transitions: is `PENDING → APPROVED` the only allowed transition? Is `APPROVED → PENDING` (reversal) possible? Is `APPROVED → REJECTED` possible after the fact? | **TBD-D10** — no transition is decided or implemented; the schema encodes none |
+| Visibility/use semantics: is a `PENDING` assignment visible in normal reads? in the calendar? operationally active, or merely awaiting confirmation? | **TBD-D32** (new — current reads return every row regardless of `approval_status`, which is carried, not interpreted; that is current behavior, not a rule) |
+| Audit: are `approved_by`/`approved_at`/`rejected_by`/`rejected_at`/reason required? | **TBD-S13** — none are modeled (docs/03 §9); if required, they are **future schema work**, deliberately not added now |
+
+**Relationship to Task approval (TBD-D12/D13):** task approval/review is
+a *separate* concept with its own open questions; nothing about
+assignment approval transfers to tasks.
 
 ### 2.4 Task
 
@@ -411,7 +463,7 @@ resolved by an approved decision (§1.1).
 | ~~TBD-D7~~ | ~~Complete event status machine; what "complete" means; who completes~~ | **partially resolved by D-002**: the status *set* is approved (DRAFT/SCHEDULED/IN_PROGRESS/COMPLETED/CANCELLED); the allowed-transition matrix, transition authorization, and operational meaning of "completed" remain open |
 | TBD-D8 | Role-based restrictions on event responsibilities | open |
 | ~~TBD-D9~~ | ~~Responsibility taxonomy: fixed list, free text, or templates~~ | **partially resolved by D-004**: the six documented examples are seeded as the initial reference-data set (migration `0003`); whether responsibilities may also be created at runtime (free text / templates / admin-managed) remains open |
-| TBD-D10 | Assignment approval states | open |
+| TBD-D10 | Assignment approval states | open (contract documented — §2.3 "EventAssignment Approval Lifecycle" / docs/06 §4e; the `PENDING`/`APPROVED` set remains provisional; no transition, reversal, or extra state is decided) |
 | TBD-D11 | Exclusivity: one person per responsibility per event? | open |
 | TBD-D12 | Which tasks require approval/review | open |
 | TBD-D13 | Task approval/review state machine | open |
@@ -432,9 +484,11 @@ resolved by an approved decision (§1.1).
 | TBD-D28 | Initial event status at creation: always `DRAFT`, or may the caller create directly in another status? | open (new — surfaced by the Event creation contract, docs/06 §4c; tied to the transition matrix **TBD-D7** and its authorization **TBD-D23**) |
 | TBD-D29 | Event-status precondition for assignments: from which event statuses (D-002 set) may an EventAssignment be created (e.g., may a person be assigned to a `COMPLETED`/`CANCELLED` event)? | open (new — surfaced by the EventAssignment creation contract, docs/06 §4d; tied to the transition matrix **TBD-D7**; until resolved the contract accepts any existing event) |
 | TBD-D30 | May an EventAssignment reference an inactive `event_responsibilities` row (`active=false`, retire mechanism **TBD-S2**)? | open (new — surfaced by the EventAssignment creation contract, docs/06 §4d) |
+| TBD-D31 | Assignment approval *authority* (workflow level): who may approve — the manager alone, another privileged role, the event owner, the central organization? | open (new — surfaced by the EventAssignment approval lifecycle, §2.3; discovery documents only the manager's *need* to approve, which is not an authority decision) |
+| TBD-D32 | `PENDING`-assignment visibility/use semantics: is a pending assignment visible in normal reads, in the calendar, operationally active — or hidden/inert until approved? | open (new — surfaced by the EventAssignment approval lifecycle, §2.3; current reads return every row regardless of `approval_status` — carried current behavior, not a rule) |
 | ~~TBD-A1~~ | ~~Multi-role persons~~ | **resolved by D-001: multiple simultaneous roles allowed** |
 | TBD-A3/A4 | Availability semantics/usage | open |
-| TBD-A6 | Approval scope of assignments | open |
+| TBD-A6 | Approval scope of assignments | open (contract documented — §2.3 "EventAssignment Approval Lifecycle" / docs/06 §4e; whether every assignment or only certain kinds requires approval is undecided) |
 | TBD-A7 | What counts as an "important exception" | open |
 | TBD-A8 | Completing an event — operational meaning (status set now fixed by D-002; entry conditions still open) | open |
 | TBD-A9 | EventReport content/structure | open |

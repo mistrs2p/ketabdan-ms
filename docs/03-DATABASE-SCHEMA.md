@@ -467,7 +467,7 @@ labeled technical choices above).
 | TBD-S1 | Role membership history (grant/revoke tracking) — none designed |
 | TBD-S2 | Responsibility lifecycle: retire/reactivate rules, archiving |
 | TBD-S3 | Hard-delete policy for persons (vs `active=false`); archival requirements |
-| TBD-S13 | Assignment approval: approver identity, `approved_by`/`approved_at`, workflow |
+| TBD-S13 | Assignment approval: approver identity, `approved_by`/`approved_at`, workflow — the approval lifecycle is now **contracted** (docs/02 §2.3 "EventAssignment Approval Lifecycle", docs/06 §4e) but **not decided**: no audit column is added until the business questions resolve |
 | TBD-S15 | Event end-time/duration — is it a confirmed concept? |
 | TBD-D1 | Person name structure (schema uses one `name` field minimally) |
 | TBD-D2 | Phone uniqueness (no unique constraint yet) |
