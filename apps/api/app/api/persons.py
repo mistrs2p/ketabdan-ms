@@ -1,20 +1,20 @@
-"""Persons endpoints — read-only (docs/03 §5.1).
+"""Persons endpoints (docs/03 §5.1, docs/06 §4a).
 
-`GET /api/persons` lists branch members with their permanent roles (D-001).
-Still no service layer: one ordered query with eager loading is a trivial
-read; a service boundary appears once endpoints carry real logic
-(docs/06 §3). Person creation is a later task — nothing is written here.
+Reads stay direct queries; creation carries real logic (role-code resolution
+plus an atomic write), so the route delegates to ``app.services.persons``
+(docs/06 §3 rule 4) and only translates its errors into HTTP responses.
 """
 
 from collections.abc import Sequence
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
 from app.models import Person, PersonRole
-from app.schemas.person import PersonRead
+from app.schemas.person import PersonCreate, PersonRead
+from app.services import persons as persons_service
 
 router = APIRouter(prefix="/api", tags=["persons"])
 
@@ -33,3 +33,24 @@ def list_persons(db: Session = Depends(get_db)) -> Sequence[Person]:
         .options(selectinload(Person.role_links).selectinload(PersonRole.role))
         .order_by(Person.name, Person.id)
     ).all()
+
+
+@router.post(
+    "/persons",
+    response_model=PersonRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_person(
+    payload: PersonCreate, db: Session = Depends(get_db)
+) -> Person:
+    """Create a branch member, optionally with roles, atomically (docs/06 §4a)."""
+    try:
+        return persons_service.create_person(db, payload)
+    except persons_service.UnknownRoleError as exc:
+        # 422 (FastAPI's own validation status) chosen for now: the request
+        # payload references role codes that do not exist. The formal error
+        # policy is still open (docs/01 TBD T5) and may revisit this.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc

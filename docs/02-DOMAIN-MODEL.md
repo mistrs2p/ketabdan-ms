@@ -82,8 +82,8 @@ Established facts — already encoded in the approved schema
 
 The API-level creation contract (role input format, atomicity, response,
 validation boundaries) is defined in
-[06-BACKEND-API.md](06-BACKEND-API.md) §4a. No Person write endpoint exists
-yet.
+[06-BACKEND-API.md](06-BACKEND-API.md) §4a and implemented by
+`POST /api/persons`.
 
 ### 2.2 Event
 

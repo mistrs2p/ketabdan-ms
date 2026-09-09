@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — first business endpoint established; the API surface is intentionally minimal and grows task by task.
+**Document status:** Implementation artifact — read endpoints plus the first write endpoint (person creation) established; the API surface is intentionally minimal and grows task by task.
 **Last reviewed:** 2026-09-09
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -38,8 +38,11 @@ apps/api/app/
 │   └── roles.py        # one router module per resource
 ├── schemas/
 │   ├── __init__.py
-│   ├── person.py       # PersonRead (reuses RoleRead for nested roles)
+│   ├── person.py       # PersonCreate (request), PersonRead (reuses RoleRead)
 │   └── role.py         # RoleRead — request/response models for roles
+├── services/
+│   ├── __init__.py
+│   └── persons.py      # create_person — first service (HTTP-free domain logic)
 └── main.py             # FastAPI app: include_router() + /api/health
 ```
 
@@ -60,8 +63,11 @@ apps/api/app/
    ordered query — the router issues it directly. The moment an endpoint
    carries real logic (validation beyond types, multi-step changes,
    cross-module coordination), that logic moves into a service/domain
-   function the router calls. Wrapping every trivial query "for symmetry"
-   is over-engineering, not architecture.
+   function the router calls; `app/services/persons.py` (`create_person`)
+   is the first instance. Wrapping every trivial query "for symmetry"
+   is over-engineering, not architecture. Services are HTTP-free: they
+   raise domain-meaningful exceptions, and the router translates those
+   into HTTP responses.
 5. **Deterministic ordering** on list endpoints (roles by `code`, persons by
    `name` then `id`, a person's nested roles by `code`) — stable responses
    make testing and diffing reliable.
@@ -80,28 +86,23 @@ apps/api/app/
 | GET | `/api/health` | Liveness check | No database involved; works without `DATABASE_URL` |
 | GET | `/api/roles` | List the permanent organizational roles (reference data, seeded by migration `0002`) | Read-only; ordered by `code`; returns `[{id, code, name}]` |
 | GET | `/api/persons` | List branch members with their permanent roles (D-001) | Read-only; ordered by `name`, then `id`; returns `[{id, name, phone, active, roles: [{id, code, name}]}]` |
+| POST | `/api/persons` | Create a branch member, optionally with roles (§4a) | First write endpoint; `201 Created` with the `PersonRead` shape; person + memberships written atomically |
 
 Roles are **read-only by design**: the six rows are migration-owned reference
 data (docs/05 §5a). No create/update/delete endpoints exist for them —
 changing the confirmed role set is a schema-level (migration) decision, not a
 runtime operation.
 
-Persons are currently read-only too: listing is confirmed visibility need;
-creation/assignment flows arrive with their own tasks and must not invent
-answers to open questions (name structure TBD-D1, phone uniqueness TBD-D2,
-inactive semantics TBD-D3). `PersonRead` surfaces `active` and `phone`
-exactly as stored, without interpreting them. The Person **creation
-contract** for the future write endpoint is defined in §4a below.
+Persons support listing (confirmed visibility need) and creation (§4a,
+implemented). `PersonRead` surfaces `active` and `phone` exactly as stored,
+without interpreting them — name structure is TBD-D1, phone uniqueness
+TBD-D2, inactive semantics TBD-D3. Other person operations (update,
+deactivate, delete) and the events/assignments APIs arrive with their own
+tasks and must not invent answers to those open questions.
 
-## 4a. Person Creation Contract (future endpoint)
+## 4a. Person Creation Contract (implemented)
 
-`POST /api/persons` is **not implemented yet** — this section defines the
-contract the future implementation must follow, so the first write endpoint
-starts from an agreed shape instead of improvising one. Nothing here adds a
-business rule beyond what docs/02 and docs/03 already establish; wherever a
-rule is not supported by project evidence it is listed as open, not guessed.
-
-### Request (conceptual)
+### Request
 
 | Field | Required | Type | Notes |
 | --- | --- | --- | --- |
@@ -116,7 +117,7 @@ reference data (docs/03 §5.2, migration `0002`) — not by UUID. Responses
 continue to return both `id` and `code`, exactly as `GET /api/persons` does
 today.
 
-### Response (conceptual)
+### Response
 
 `201 Created` with the created person in the `PersonRead` shape already
 served by `GET /api/persons`: `{id, name, phone, active, roles}`.
@@ -130,24 +131,36 @@ transactional integrity). This is a technical guarantee, not a business rule.
 
 ### Validation boundaries
 
-Already known (guaranteed by the approved schema, docs/03 §5.1/§5.3):
+Guaranteed by the approved schema (docs/03 §5.1/§5.3):
 
-- `name` must be present (`NOT NULL`).
+- `name` must be present (`NOT NULL`) → FastAPI returns its standard 422
+  validation response when it is missing.
 - `phone`, when present, is free text — no format constraint exists.
 - every supplied role code must reference an existing seeded role
   (FK `person_roles.role_id` → `roles.id`, `ON DELETE RESTRICT`).
 
-Explicitly unresolved (error-policy questions — decided with the general API
-error policy, docs/01 TBD T5; no runtime behavior may hard-code an answer):
+Implementation choices made for this endpoint (technical/API details, not
+domain rules; revisit if the general error policy decides otherwise):
 
-- HTTP error body shape for validation failures.
-- Status code for an unknown role code (422 vs 404).
+- An unknown role code → **422** with the unknown code(s) named in
+  `detail` (FastAPI's own validation status; the 422-vs-404 question is
+  folded into **TBD T5**).
+- Duplicate role codes within the input list are **collapsed** — a person
+  holds a *set* of roles (D-001), so `["supporter", "supporter"]` creates
+  one membership.
+- `active: false` in the request is carried as given — creation directly
+  as inactive is technically permitted; what inactive *means* stays
+  **TBD-D3**.
+
+Explicitly unresolved (decided with the general API error policy,
+docs/01 TBD T5; no runtime behavior may hard-code an answer):
+
+- HTTP error body shape for validation failures (currently FastAPI's
+  default `{detail: ...}` everywhere).
 - Name emptiness/whitespace/length rules (**TBD-D1**).
 - Phone format, normalization, and duplicate handling (**TBD-D2**).
-- Whether a duplicate role code within the input list is deduplicated or
-  rejected — an input-validation detail, not a domain rule.
-- Whether a person may be created directly as inactive (`active: false` in
-  the request) or only deactivated later — tied to **TBD-D3**.
+- Whether the business *requires* at least one role at creation
+  (**TBD-D24**).
 
 ## 5. Tests
 
@@ -166,15 +179,17 @@ From `apps/api` (venv active, PostgreSQL running):
 ```bash
 python -m pytest                 # all tests, including API tests (SQLite)
 python -m app.db.check           # real database connectivity
-uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles
+uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
+                                 #       POST /api/persons, GET /api/persons
 ```
 
 ## 7. Out of Scope (unchanged TBDs)
 
 - **Authentication/authorization** — TBD-A13/A11; no route requires identity
   yet. When auth lands, it will be enforced inside this layer (docs/01 §4).
-- Write endpoints of any kind (roles are read-only by design, §4; person
-  creation is contract-only for now — §4a — and its implementation, along
-  with events/assignments APIs, arrives with its own task), pagination and
-  error-format conventions (docs/01 §4 TBDs T4/T5).
+- Write endpoints: person creation is implemented (§4a); events,
+  assignments, reports, and remaining person operations (update,
+  deactivate, delete) arrive with their own tasks. Roles stay read-only by
+  design (§4). Pagination and error-format conventions remain open
+  (docs/01 §4 TBDs T4/T5).
 - OpenAPI → TypeScript type generation for the frontend (TBD T3).
