@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints, the first write endpoint (person creation), the MVP error policy (§4b), and the Event creation contract (§4c) established; the API surface is intentionally minimal and grows task by task.
+**Document status:** Implementation artifact — read endpoints, two write endpoints (person and event creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
 **Last reviewed:** 2026-09-09
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -34,14 +34,17 @@ response model (same API schema) → JSON
 apps/api/app/
 ├── api/
 │   ├── __init__.py
+│   ├── events.py       # events router (POST — creation)
 │   ├── persons.py      # persons router
 │   └── roles.py        # one router module per resource
 ├── schemas/
 │   ├── __init__.py
+│   ├── event.py        # EventCreate (request), EventRead (response)
 │   ├── person.py       # PersonCreate (request), PersonRead (reuses RoleRead)
 │   └── role.py         # RoleRead — request/response models for roles
 ├── services/
 │   ├── __init__.py
+│   ├── events.py       # create_event — always-DRAFT invariant (§4c)
 │   └── persons.py      # create_person — first service (HTTP-free domain logic)
 └── main.py             # FastAPI app: include_router() + /api/health
 ```
@@ -87,6 +90,7 @@ apps/api/app/
 | GET | `/api/roles` | List the permanent organizational roles (reference data, seeded by migration `0002`) | Read-only; ordered by `code`; returns `[{id, code, name}]` |
 | GET | `/api/persons` | List branch members with their permanent roles (D-001) | Read-only; ordered by `name`, then `id`; returns `[{id, name, phone, active, roles: [{id, code, name}]}]` |
 | POST | `/api/persons` | Create a branch member, optionally with roles (§4a) | First write endpoint; `201 Created` with the `PersonRead` shape; person + memberships written atomically |
+| POST | `/api/events` | Create an event, always in `DRAFT` (§4c) | `201 Created` with the `EventRead` shape `{id, title, type, planned_at, status}`; timezone-aware `planned_at` required |
 
 Roles are **read-only by design**: the six rows are migration-owned reference
 data (docs/05 §5a). No create/update/delete endpoints exist for them —
@@ -98,9 +102,9 @@ implemented). `PersonRead` surfaces `active` and `phone` exactly as stored,
 without interpreting them — name structure is TBD-D1, phone uniqueness
 TBD-D2, inactive semantics TBD-D3. Other person operations (update,
 deactivate, delete) and the events/assignments APIs arrive with their own
-tasks and must not invent answers to those open questions. Events have no
-endpoint yet; their creation contract is defined ahead of implementation
-in §4c.
+tasks and must not invent answers to those open questions. Events support
+creation (§4c, implemented — always `DRAFT`); their read/calendar endpoints
+arrive with their own tasks.
 
 ## 4a. Person Creation Contract (implemented)
 
@@ -228,25 +232,24 @@ in `POST /api/persons` (§4a):
    concern of the frontend; the backend's `detail` strings are for
    developers/API consumers and are not a UI copy source.
 
-## 4c. Event Creation Contract (future endpoint)
+## 4c. Event Creation Contract (implemented)
 
-`POST /api/events` is **not implemented yet** — this section defines the
-contract the future implementation must follow, so the first Event write
-endpoint starts from an agreed shape instead of improvising one (same
-approach as Person creation, §4a). "Create Event" is the first step of the
-approved MVP workflow (docs/02 §8), so the creation need itself is
-confirmed. Nothing here adds a business rule beyond what docs/02, docs/03,
-and D-002 already establish; wherever a rule is not supported by project
-evidence it is listed as open (docs/02 §7 TBD-D25…D28), not guessed.
+`POST /api/events` is implemented per this contract (same approach as
+Person creation, §4a: contract first, then implementation). "Create Event"
+is the first step of the approved MVP workflow (docs/02 §8), so the
+creation need itself is confirmed. Nothing here adds a business rule
+beyond what docs/02, docs/03, and D-002 already establish; wherever a rule
+is not supported by project evidence it is listed as open (docs/02 §7
+TBD-D25…D28), not guessed.
 
-### Request (conceptual)
+### Request
 
 | Field | Required | Type | Notes |
 | --- | --- | --- | --- |
 | `title` | yes | string | Confirmed concept; single free-text field (docs/03 §5.4, `NOT NULL`). Emptiness/whitespace/length rules are **TBD-D25** — none may be invented. |
 | `type` | yes | string | Required by the schema (`text NOT NULL`) and stored as free text (docs/03 §6.2 — no CHECK, no reference table, no enum). The known examples (introduction, film analysis, book analysis, gathering, group games, class) are **examples only**; the taxonomy is **TBD-D5** and must not be hard-coded. What the endpoint accepts before D5 resolves is **TBD-D26**. |
 | `planned_at` | yes | ISO 8601 datetime **with timezone offset** | `timestamptz` business instant (docs/03 §4) — always timezone-aware, never a bare date. JSON representation is an RFC 3339 string (technical choice, e.g. `"2026-09-19T17:00:00+03:30"`). Past values: **TBD-D27**. Recurrence is not part of creation (**TBD-D6**). |
-| `status` | no | — | **Not part of the request.** The schema default is `DRAFT` (docs/03 §5.4), so creation always produces `DRAFT` *unless* TBD-D28 decides otherwise. Whether a caller may ever set the initial status is tied to the transition matrix (**TBD-D7**) and its authorization (**TBD-D23**) — the future implementation must not silently allow creating directly as `SCHEDULED`/`COMPLETED`/… before those resolve. |
+| `status` | no | — | **Not part of the request.** The schema default is `DRAFT` (docs/03 §5.4) and the endpoint never passes a status — creation always produces `DRAFT`. Like any other unknown field, a `status` value in the request is **ignored** (the `PersonCreate` precedent), so a client cannot create directly as `SCHEDULED`/`COMPLETED`/…. Whether creation may ever start in another status is **TBD-D28**, tied to the transition matrix (**TBD-D7**) and its authorization (**TBD-D23**). |
 
 **Explicitly not in the request:** `id` (server-generated, docs/03 §3),
 `created_at`/`updated_at` (system-set audit, docs/03 §4), `assignments`
@@ -256,34 +259,36 @@ and `event_responsibilities` rows are deliberately unseeded until D9
 resolves, docs/05; assignments get their own future endpoint(s)), and any
 report field (a report is a post-event record, **D-003**).
 
-### Response (conceptual)
+### Response
 
 `201 Created` with the created event in the events read shape — exactly
 the five business fields, audit columns not exposed (§3 rule 2):
-`{id, title, type, planned_at, status}`. The concrete `EventRead` schema
-is defined with the first events endpoint to be implemented (read or
-write); this contract fixes only the field set so the two endpoints cannot
-diverge.
+`{id, title, type, planned_at, status}`. `EventRead`
+(`app/schemas/event.py`) is that shape, defined with this endpoint; the
+future `GET /api/events` reuses it, so read and write cannot diverge.
 
 ### Transactional expectation
 
 Event creation writes exactly **one row** in `events` (no related rows by
-design — see above). If the future endpoint ever grows related writes,
-they follow the §4a atomicity rule: all-or-nothing in one transaction.
+design — see above). If the endpoint ever grows related writes, they
+follow the §4a atomicity rule: all-or-nothing in one transaction.
 
 ### Validation boundaries
 
-Guaranteed by the approved schema (docs/03 §5.4):
+Guaranteed by the approved schema (docs/03 §5.4) and enforced by
+`EventCreate`:
 
 - `title` and `type` must be present (`NOT NULL`).
-- `planned_at` must be a timezone-aware instant (`timestamptz`).
+- `planned_at` must be a timezone-aware instant (`timestamptz`) — a naive
+  datetime or bare date is rejected with 422 rather than silently
+  interpreted as local time (docs/03 §4).
 - `status` is constrained to the D-002 set by CHECK — but creation does
   not accept a status input (see request table).
 
-Transport of failures is **not** open anymore: it follows the error policy
-(§4b) — malformed/missing fields → FastAPI's default 422; a domain
-rejection (e.g., a future rule from D26/D27) → 422 with a human-readable
-`detail`, translated at the router.
+Transport of failures follows the error policy (§4b): malformed/missing
+fields and naive datetimes → FastAPI's default 422. No domain rejection
+exists yet — if a future rule from D26/D27 adds one, it is a 422 with a
+human-readable `detail`, translated at the router.
 
 Explicitly unresolved (business questions — docs/02 §7; no runtime
 behavior may hard-code an answer):
@@ -298,10 +303,10 @@ behavior may hard-code an answer):
 ## 5. Tests
 
 The API test files (`tests/test_api_roles.py`, `tests/test_api_persons.py`,
-`tests/test_api_error_policy.py`) exercise the full HTTP stack — routing,
-dependency injection, response serialization — with FastAPI's `TestClient`.
-The error-policy tests lock the status codes and body shapes documented in
-§4b. The shared `client` fixture
+`tests/test_api_events.py`, `tests/test_api_error_policy.py`) exercise the
+full HTTP stack — routing, dependency injection, response serialization —
+with FastAPI's `TestClient`. The error-policy tests lock the status codes
+and body shapes documented in §4b. The shared `client` fixture
 (conftest.py) overrides `get_db` with the in-memory SQLite session, which
 uses `StaticPool` + `check_same_thread=False` because TestClient runs the
 app in a worker thread. PostgreSQL behavior is verified by running the
@@ -315,17 +320,18 @@ From `apps/api` (venv active, PostgreSQL running):
 python -m pytest                 # all tests, including API tests (SQLite)
 python -m app.db.check           # real database connectivity
 uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
-                                 #       POST /api/persons, GET /api/persons
+                                 #       POST /api/persons, GET /api/persons,
+                                 #       POST /api/events
 ```
 
 ## 7. Out of Scope (unchanged TBDs)
 
 - **Authentication/authorization** — TBD-A13/A11; no route requires identity
   yet. When auth lands, it will be enforced inside this layer (docs/01 §4).
-- Write endpoints: person creation is implemented (§4a); event creation is
-  contract-only for now (§4c — its implementation arrives with its own
-  task); assignments, reports, and remaining person operations (update,
-  deactivate, delete) likewise. Roles stay read-only by
+- Write endpoints: person creation (§4a) and event creation (§4c) are
+  implemented; assignments, reports, remaining person operations (update,
+  deactivate, delete), and event reads/transitions arrive with their own
+  tasks. Roles stay read-only by
   design (§4). Pagination conventions remain open (docs/01 §4 TBD T4);
   the error format is **defined** (§4b) and the reserved 404/409 resource
   rows activate with their first endpoints.

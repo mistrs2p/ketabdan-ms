@@ -149,7 +149,8 @@ approved schema (docs/03 §5.4, §4), not new decisions:
   post-event record (D-003).
 
 The API-level creation contract (request/response shape, transport of
-failures) is defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4c.
+failures) is defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4c and
+implemented by `POST /api/events`.
 
 ### 2.3 EventAssignment
 
