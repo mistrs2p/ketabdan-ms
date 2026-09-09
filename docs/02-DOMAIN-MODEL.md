@@ -1,7 +1,7 @@
 # 02 — Domain & Data Model Foundation
 
 **Project:** Ketabdaneh
-**Document status:** Conceptual model — three initial MVP decisions approved (§1.1); remaining TBDs pending review.
+**Document status:** Conceptual model — four MVP decisions approved (§1.1, D-001–D-004); remaining TBDs pending review.
 **Last reviewed:** 2026-09-09
 **Depends on:** [00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md), [01-ARCHITECTURE.md](01-ARCHITECTURE.md)
 
@@ -154,9 +154,9 @@ approved schema (docs/03 §5.4, §4), not new decisions:
 - **Assignments are not part of creation**: an EventAssignment is its own
   entity (§2.3) with open approval (**TBD-D10/A6**), exclusivity
   (**TBD-D11**), and role-restriction (**TBD-D8**) semantics. Assignments
-  arrive via their own future endpoint(s) — the creation contract is
-  defined in docs/06 §4d, blocked until D-004's seed landed (now done,
-  migration `0003`). Likewise an EventReport is never part of creation —
+  arrive via their own endpoints (`POST /api/event-assignments`, docs/06
+  §4d — implemented; seeded reference data landed with D-004, migration
+  `0003`). Likewise an EventReport is never part of creation —
   it is a post-event record (D-003).
 
 The API-level creation contract (request/response shape, transport of

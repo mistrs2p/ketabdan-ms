@@ -565,7 +565,8 @@ the TBDs above.
 
 ## 5. Tests
 
-The API test files (`tests/test_api_roles.py`, `tests/test_api_persons.py`,
+The API test files (`tests/test_api_health.py`, `tests/test_api_roles.py`,
+`tests/test_api_persons.py`,
 `tests/test_api_events.py`, `tests/test_api_event_assignments.py`,
 `tests/test_api_error_policy.py`) exercise the
 full HTTP stack — routing, dependency injection, response serialization —
