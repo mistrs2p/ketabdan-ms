@@ -13,5 +13,42 @@
       "dark": "Dark"
     },
     "language": "Language"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "calendar": "Calendar",
+    "events": "Events",
+    "tasks": "Tasks",
+    "people": "People"
+  },
+  "app": {
+    "name": "Ketabdaneh",
+    "navLabel": "Main navigation",
+    "menuLabel": "Open menu",
+    "header": {
+      "context": "Operations management panel"
+    },
+    "pages": {
+      "dashboard": {
+        "title": "Dashboard",
+        "placeholder": "This is a placeholder page; dashboard logic will be implemented later."
+      },
+      "calendar": {
+        "title": "Calendar",
+        "placeholder": "This is a placeholder page; the calendar will be implemented later."
+      },
+      "events": {
+        "title": "Events",
+        "placeholder": "This is a placeholder page; event management will be implemented later."
+      },
+      "tasks": {
+        "title": "Tasks",
+        "placeholder": "This is a placeholder page; task management will be implemented later."
+      },
+      "people": {
+        "title": "People",
+        "placeholder": "This is a placeholder page; people management will be implemented later."
+      }
+    }
   }
 }
