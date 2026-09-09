@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads, event assignments incl. single-assignment reads), three write endpoints (person, event, and event-assignment creation), the MVP error policy (§4b) established, and the EventAssignment approval contract **defined but not implemented** (§4e); the API surface is intentionally minimal and grows task by task.
+**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads, event assignments incl. single-assignment reads), three write endpoints (person, event, and event-assignment creation), the MVP error policy (§4b) established, and the EventAssignment approval contract **defined but not implemented** (§4e); the API surface is intentionally minimal and grows task by task. **Phase 3 — CLOSED / FROZEN 2026-09-09 (§8).**
 **Last reviewed:** 2026-09-09
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -618,3 +618,69 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
   the error format is **defined** (§4b) and the reserved 409 row activates
   with its first endpoint.
 - OpenAPI → TypeScript type generation for the frontend (TBD T3).
+
+## 8. Phase 3 — CLOSED / FROZEN (2026-09-09)
+
+**Completion record.** Phase 3 — Backend Foundation — is closed and frozen
+as of 2026-09-09. The hardening/gap audit (task 3.21) found the foundation
+sound; this record is the final state at freeze.
+
+### Completed backend scope
+
+- **Infrastructure:** FastAPI application, pydantic-settings configuration,
+  SQLAlchemy 2.x persistence, session/dependency foundation
+  (docs/04), Docker PostgreSQL development database, Alembic setup.
+- **Schema:** the seven MVP business tables (persons, roles, person_roles,
+  events, event_responsibilities, event_assignments, event_reports) via
+  migration chain `0001 → 0002 → 0003`, single head, no drift
+  (`alembic check` clean).
+- **Reference data:** six roles (learner, supporter, coach, teacher,
+  referrer, manager — migration `0002`) and six event responsibilities
+  (pre_introduction, welcome_reception, technique_execution, persuasion,
+  registration, follow_up — migration `0003`, D-004); stable migration-owned
+  UUIDs; no other rows.
+- **API surface — exactly these 10 routes** (verified against live
+  OpenAPI):
+
+  | # | Route |
+  | --- | --- |
+  | 1 | `GET /api/health` |
+  | 2 | `GET /api/roles` |
+  | 3 | `GET /api/persons` |
+  | 4 | `POST /api/persons` |
+  | 5 | `GET /api/events` |
+  | 6 | `GET /api/events/{event_id}` |
+  | 7 | `POST /api/events` |
+  | 8 | `GET /api/event-assignments` |
+  | 9 | `GET /api/event-assignments/{assignment_id}` |
+  | 10 | `POST /api/event-assignments` |
+
+  Plus the defined-but-unimplemented EventAssignment approval contract
+  (§4e) and the error policy (§4b).
+
+- **Final validation at freeze:** pytest **82 passed**; `alembic current`
+  = `0003 (head)`; `alembic check` — no new upgrade operations;
+  `python -m app.db.check` — OK; live smoke of all five read families plus
+  single-resource 404s and creation atomicity — all per contract; business
+  tables empty (reference seed data only).
+
+### Intentionally NOT in Phase 3 (later phases/tasks)
+
+Authentication/authorization (A13/A11) · assignment approval
+implementation (§4e stays unimplemented; D10/A6/S13/D31/D32 open) ·
+assignment update/delete · event status transitions (D7/D23) · event
+reports (D19/A9) · person update/deactivate/delete · pagination (T4) ·
+advanced filters/search · Task / Availability modules · Telegram/Bale
+integration · frontend UI (calendar, dashboard) · OpenAPI client
+generation (T3) · production deployment.
+
+**All business TBDs (docs/02 §7, docs/00 §7) remain open.** None was
+resolved to close this phase; the TBD discipline continues unchanged.
+
+### Freeze statement
+
+From this point, any new backend work — endpoint, schema change,
+migration, or behavior change — requires a **new explicitly assigned
+task/phase** that follows the documented contract-first workflow and
+respects the open-TBD protection. This closeout changes documentation
+only: no code, schema, migration, or runtime behavior was modified.
