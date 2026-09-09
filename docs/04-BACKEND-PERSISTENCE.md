@@ -123,7 +123,8 @@ the database's ON DELETE behavior instead of nullifying child FKs.
 - **Seed data** (six roles) — seeded by Alembic migration `0002`
   (docs/05 §5a). Example responsibilities are **not** seeded (taxonomy
   TBD-D9).
-- Business APIs, CRUD endpoints, auth, calendar/Jalali logic, etc.
+- Remaining business APIs (the read-only roles endpoint exists — docs/06),
+  auth, calendar/Jalali logic, etc.
 
 ## 8. Validation
 
