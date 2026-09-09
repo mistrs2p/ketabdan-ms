@@ -1,14 +1,18 @@
-"""Shared pytest fixtures: an isolated in-memory SQLite database.
+"""Shared pytest fixtures.
 
-Unit-level model/metadata tests must not require the production PostgreSQL
-instance. SQLite enforces CHECK/UNIQUE/PK constraints and (with
-`PRAGMA foreign_keys=ON`, enabled below) FK delete behaviors, so the ORM
-wiring can be exercised end-to-end here. PostgreSQL-specific behavior is
-additionally covered by running the application against the real database
-(see docs/04-BACKEND-PERSISTENCE.md, Validation).
+Unit-level model/metadata tests use an isolated in-memory SQLite database
+(no PostgreSQL required). SQLite enforces CHECK/UNIQUE/PK constraints and
+(with `PRAGMA foreign_keys=ON`, enabled below) FK delete behaviors, so the
+ORM wiring can be exercised end-to-end there; API tests reuse the same
+session through FastAPI's dependency override. PostgreSQL-specific behavior
+is additionally covered by running the application against the real database
+(see docs/04-BACKEND-PERSISTENCE.md and docs/06-BACKEND-API.md, Validation).
 """
 
+from collections.abc import Iterator
+
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -16,6 +20,8 @@ from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401 — register all models on Base.metadata
 from app.db.base import Base
+from app.db.session import get_db
+from app.main import app
 
 
 @pytest.fixture()
@@ -47,3 +53,16 @@ def session(engine: Engine) -> Session:
     session = factory()
     yield session
     session.close()
+
+
+@pytest.fixture()
+def client(session: Session) -> Iterator[TestClient]:
+    """TestClient wired to the isolated SQLite session via dependency override."""
+
+    def override_get_db() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.pop(get_db, None)
