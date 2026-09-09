@@ -69,7 +69,6 @@
     "phoneUnavailable": "—",
     "noRoles": "—",
     "viewAction": "View",
-    "viewDisabledHint": "Person details will be implemented in a later task.",
     "loading": "Loading people…",
     "error": {
       "title": "Could not load people",
@@ -107,6 +106,30 @@
         "network": "Roles could not be loaded. Check that the backend service is running and try again.",
         "empty": "No roles are available yet. Person creation requires role reference data.",
         "back": "Back to people"
+      }
+    },
+    "detail": {
+      "description": "Profile of a branch member.",
+      "name": "Name",
+      "phone": "Phone",
+      "status": "Status",
+      "roles": "Roles",
+      "statusActive": "Active",
+      "statusInactive": "Inactive",
+      "phoneUnavailable": "Not provided",
+      "noRoles": "No roles assigned",
+      "edit": "Edit",
+      "editDisabledHint": "Editing is not available yet — it will be implemented when the backend supports person updates.",
+      "back": "Back to {page}",
+      "error": {
+        "title": "Could not load this person",
+        "server": "This person is unavailable right now. Try again in a moment.",
+        "back": "Back to people"
+      },
+      "notFound": {
+        "title": "Person not found",
+        "description": "This person does not exist or is no longer available.",
+        "back": "Back to {page}"
       }
     }
   }
