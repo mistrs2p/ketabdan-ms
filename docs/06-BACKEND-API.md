@@ -94,7 +94,7 @@ apps/api/app/
 | GET | `/api/events` | List events — the calendar-oriented read | Ordered by `planned_at`, then `id`; returns `EventRead` items `{id, title, type, planned_at, status}`; `planned_at` is a timezone-aware instant |
 | GET | `/api/events/{event_id}` | Return one event by id | `EventRead`; unknown-but-valid UUID → `404 {"detail": "Event not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
 | POST | `/api/events` | Create an event, always in `DRAFT` (§4c) | `201 Created` with the `EventRead` shape `{id, title, type, planned_at, status}`; timezone-aware `planned_at` required |
-| POST | `/api/event-assignments` | Create an assignment (§4d) | **Contract defined, NOT implemented** — blocked on responsibility seeding (**TBD-D9**); future: `201 Created` with the §4d response shape |
+| POST | `/api/event-assignments` | Create an assignment (§4d) | **Contract defined, NOT implemented** — former blocker (responsibility seeding, TBD-D9) resolved by **D-004** (seed migration `0003`); implementation arrives with its own task; future: `201 Created` with the §4d response shape |
 
 Roles are **read-only by design**: the six rows are migration-owned reference
 data (docs/05 §5a). No create/update/delete endpoints exist for them —
@@ -260,8 +260,8 @@ TBD-D25…D28), not guessed.
 `created_at`/`updated_at` (system-set audit, docs/03 §4), `assignments`
 (an EventAssignment is its own entity with open semantics — approval
 **TBD-D10/A6**, exclusivity **TBD-D11**, role restrictions **TBD-D8** —
-and `event_responsibilities` rows are deliberately unseeded until D9
-resolves, docs/05; assignments get their own future endpoint(s)), and any
+and `event_responsibilities` is now seeded per **D-004**, migration
+`0003`; assignments get their own future endpoint(s), §4d), and any
 report field (a report is a post-event record, **D-003**).
 
 ### Response
@@ -351,17 +351,20 @@ the two implemented creation contracts):
   any role (**TBD-D8**).
 - Reference-data lookups by stable machine `code` are the established
   input pattern (`POST /api/persons` roles, §4a); `event_responsibilities`
-  has the same `code`/`name` reference-data shape as `roles` (docs/03 §5.5).
+  has the same `code`/`name` reference-data shape as `roles` (docs/03 §5.5)
+  and — since **D-004** (migration `0003`) — is seeded with its initial
+  six-row set, so codes resolve exactly like role codes do.
 - Failure transport is fixed by the error policy (§4b): malformed/missing
   fields → FastAPI default 422; unknown-but-valid UUID references
   (not-found *resources*) → **404** with a human-readable `detail`;
   domain-content violations → **422**.
 
-**Still TBD — blocking (the endpoint cannot ship before these resolve):**
+**Still TBD — ~~blocking~~ (formerly blocking; resolved by **D-004**,
+migration `0003`):**
 
 | # | Question |
 | --- | --- |
-| **TBD-D9** | The responsibility taxonomy. `event_responsibilities` is deliberately **unseeded** (docs/05 §5a) — no responsibility rows exist to reference, so no valid `responsibility` value can be resolved yet. Seeding requires a business decision on the final taxonomy (or a conscious decision to seed the known examples). |
+| ~~**TBD-D9**~~ | ~~The responsibility taxonomy. `event_responsibilities` is deliberately **unseeded** (docs/05 §5a) — no responsibility rows exist to reference, so no valid `responsibility` value can be resolved yet.~~ **[RESOLVED — D-004, 2026-09-09]**: the six documented responsibilities are seeded (migration `0003`, docs/05 §5b), so a `responsibility` code now resolves against real reference data. Whether responsibilities may also be created at runtime stays open (TBD-D9, narrowed) — non-blocking for this endpoint. |
 
 **Still TBD — non-blocking (contract shape unaffected; the future
 implementation must carry each as an explicit open check or absence):**
@@ -383,7 +386,7 @@ implementation must carry each as an explicit open check or absence):**
 | --- | --- | --- | --- |
 | `event_id` | yes | UUID | The event being staffed. Must reference an existing `events` row (FK, docs/03 §5.6). Status-precondition rules are **TBD-D29** — not checked. |
 | `person_id` | yes | UUID | The person taking the responsibility. Must reference an existing `persons` row (FK). Active/inactive is **TBD-D3** — surfaced, not interpreted. Role restrictions are **TBD-D8** — not checked. |
-| `responsibility` | yes | string (responsibility **code**) | The stable machine key of an `event_responsibilities` row (docs/03 §5.5), following the §4a role-by-code precedent. An unknown code → **422** (domain reference data, §4b rule 3). Whether inactive rows are accepted is **TBD-D30**. |
+| `responsibility` | yes | string (responsibility **code**) | The stable machine key of an `event_responsibilities` row (docs/03 §5.5, seeded per **D-004**, migration `0003`), following the §4a role-by-code precedent. An unknown code → **422** (domain reference data, §4b rule 3). Whether inactive rows are accepted is **TBD-D30**. |
 
 **Explicitly not in the request:**
 
@@ -451,7 +454,9 @@ request contract:
   must surface this, not decide it.
 
 Explicitly unresolved (business questions — no runtime behavior may
-hard-code an answer): D9 (blocking), D29, D30, D11, D3, D8, D10/A6/S13 —
+hard-code an answer): ~~D9 (blocking)~~ (**resolved by D-004** — seed
+migration `0003`; runtime creation of responsibilities stays open,
+narrowed), D29, D30, D11, D3, D8, D10/A6/S13 —
 see the TBD table above.
 
 ## 5. Tests
@@ -485,8 +490,10 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
   yet. When auth lands, it will be enforced inside this layer (docs/01 §4).
 - Write endpoints: person creation (§4a) and event creation (§4c) are
   implemented, plus event listing; event-assignment creation is
-  **contracted (§4d) but not implemented** — blocked on responsibility
-  seeding (**TBD-D9**); reports, remaining person operations (update,
+  **contracted (§4d) but not implemented** — its former blocker,
+  responsibility seeding (**TBD-D9**), is resolved by **D-004** (seed
+  migration `0003`, docs/05 §5b); the implementation arrives with its own
+  task. Reports, remaining person operations (update,
   deactivate, delete), and event status transitions arrive with their own
   tasks. Roles stay read-only by
   design (§4). Pagination conventions remain open (docs/01 §4 TBD T4);

@@ -106,11 +106,13 @@ roles** into `roles` as reference data (docs/03 §5.2, docs/00 §3):
   discovery (docs/00 §7 ✅3) — confirmed reference data, not a speculative
   taxonomy. The schema design (docs/03 §5.2) explicitly defines them as the
   seed rows.
-- **EventResponsibilities are deliberately NOT seeded.** The example
-  responsibilities (`pre_introduction`, `welcome_reception`,
-  `technique_execution`, `persuasion`, `registration`, `follow_up`) are known
-  *examples* only; the taxonomy remains unresolved (**TBD-D9**) and is not
-  turned into finalized reference data here.
+- **EventResponsibilities are seeded by their own migration (`0003`,
+  §5b).** The example responsibilities (`pre_introduction`,
+  `welcome_reception`, `technique_execution`, `persuasion`, `registration`,
+  `follow_up`) were deliberately left unseeded here while the taxonomy was
+  unresolved (TBD-D9); **D-004** (docs/02 §1.1) now approves them as the
+  initial reference-data set, seeded separately so each migration stays a
+  single logical change.
 - **How it behaves:** each role is inserted with a hard-coded stable UUID (no
   generation library), using `INSERT ... ON CONFLICT (code) DO NOTHING`
   against the existing `uq_roles_code` unique constraint — re-executing the
@@ -120,6 +122,37 @@ roles** into `roles` as reference data (docs/03 §5.2, docs/00 §3):
   — so unrelated role rows survive a downgrade.
 - The seed lives in the versioned migration history (not application startup,
   `create_all()`, or ad-hoc SQL), per the rules in §6.
+
+## 5b. The Responsibility Seed Migration (`0003`)
+
+Revision `0003_seed_initial_responsibilities` inserts the **six initial
+event responsibilities** into `event_responsibilities` as reference data
+(docs/03 §5.5, decision **D-004** — resolves the blocking part of TBD-D9):
+
+`pre_introduction` (Pre-introduction), `welcome_reception`
+(Welcome / reception), `technique_execution` (Technique execution),
+`persuasion` (Persuasion), `registration` (Registration), `follow_up`
+(Follow-up).
+
+- **Why these six:** they are exactly the responsibility examples already
+  documented in three places — docs/02 §2.3, docs/03 §5.5, and this
+  document §5a — and **D-004** (docs/02 §1.1) consciously approves them as
+  the initial seeded set. Nothing beyond the six documented examples is
+  seeded; no code is renamed; no synonyms or translated duplicates are
+  introduced; the `code`s stay stable snake_case machine keys. Whether
+  responsibilities may later be created at runtime remains open
+  (TBD-D9, narrowed).
+- **How it behaves** (mirroring `0002` exactly): each row is inserted with
+  a hard-coded stable UUID, using `INSERT ... ON CONFLICT (code) DO NOTHING`
+  against the existing `uq_event_responsibilities_code` unique constraint —
+  re-executing the insert cannot create duplicates or clobber existing
+  rows. All rows are seeded with `active = true` (the retire mechanism
+  itself is TBD-S2 — only the flag exists). Audit timestamps are left to
+  the existing database defaults. `downgrade()` deletes **only the six
+  migration-owned rows (by id)** — never a broad
+  `DELETE FROM event_responsibilities` — so unrelated rows survive a
+  downgrade.
+- Like `0002`, the seed lives in the versioned migration history, per §6.
 
 ## 6. Rules
 
@@ -155,6 +188,9 @@ See the task's final report for the results actually executed.
 
 ## 8. Out of Scope
 
-- Seeding EventResponsibilities (taxonomy TBD-D9 — not confirmed reference data).
+- ~~Seeding EventResponsibilities (taxonomy TBD-D9 — not confirmed reference data).~~
+  **Done — D-004** (docs/02 §1.1): the initial six-row seed is migration
+  `0003` (§5b). Runtime creation of responsibilities (free text /
+  templates / admin-managed) remains TBD-D9 (narrowed).
 - Business APIs, CRUD endpoints, auth — later tasks.
 - Any production deployment/migration (no production environment exists).
