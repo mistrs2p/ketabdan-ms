@@ -205,11 +205,12 @@ rules (e.g., can two people share "registration"?) are **TBD-D11**.
 second step of the approved MVP workflow (§8), so the creation need is
 confirmed. The API-level creation contract (request/response shape,
 reference identification, validation boundaries, error transport) is
-defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4d for the future
-`POST /api/event-assignments` — **not implemented yet**; its former blocker
-(responsibility seeding, **TBD-D9**) is resolved by **D-004** (seed
-migration `0003`), and the contract carries the remaining open assignment
-semantics (D8, D10/A6, D11, D3, D29, D30) as explicit TBDs.
+defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4d and **implemented**
+by `POST /api/event-assignments`; its former blocker (responsibility
+seeding, **TBD-D9**) is resolved by **D-004** (seed migration `0003`),
+and the contract carries the remaining open assignment semantics
+(D8, D10/A6, D11, D3, D29, D30) as explicit TBDs — carried by the
+endpoint as documented current behavior, never as invented rules.
 
 ### 2.4 Task
 

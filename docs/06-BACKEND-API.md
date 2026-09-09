@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads), two write endpoints (person and event creation), the MVP error policy (§4b), and the EventAssignment creation contract (§4d — defined, **not** implemented) established; the API surface is intentionally minimal and grows task by task.
+**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads), three write endpoints (person, event, and event-assignment creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
 **Last reviewed:** 2026-09-09
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -34,16 +34,21 @@ response model (same API schema) → JSON
 apps/api/app/
 ├── api/
 │   ├── __init__.py
-│   ├── events.py       # events router (GET list, POST create)
+│   ├── event_assignments.py  # event-assignments router (POST create)
+│   ├── events.py       # events router (GET list/single, POST create)
 │   ├── persons.py      # persons router
 │   └── roles.py        # one router module per resource
 ├── schemas/
 │   ├── __init__.py
+│   ├── event_assignment.py  # EventAssignmentCreate (request),
+│   │                        #   EventAssignmentRead (response, §4d)
 │   ├── event.py        # EventCreate (request), EventRead (response)
 │   ├── person.py       # PersonCreate (request), PersonRead (reuses RoleRead)
 │   └── role.py         # RoleRead — request/response models for roles
 ├── services/
 │   ├── __init__.py
+│   ├── event_assignments.py  # create_event_assignment — reference
+│   │                          #   resolution (§4d)
 │   ├── events.py       # create_event — always-DRAFT invariant (§4c)
 │   └── persons.py      # create_person — first service (HTTP-free domain logic)
 └── main.py             # FastAPI app: include_router() + /api/health
@@ -94,7 +99,7 @@ apps/api/app/
 | GET | `/api/events` | List events — the calendar-oriented read | Ordered by `planned_at`, then `id`; returns `EventRead` items `{id, title, type, planned_at, status}`; `planned_at` is a timezone-aware instant |
 | GET | `/api/events/{event_id}` | Return one event by id | `EventRead`; unknown-but-valid UUID → `404 {"detail": "Event not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
 | POST | `/api/events` | Create an event, always in `DRAFT` (§4c) | `201 Created` with the `EventRead` shape `{id, title, type, planned_at, status}`; timezone-aware `planned_at` required |
-| POST | `/api/event-assignments` | Create an assignment (§4d) | **Contract defined, NOT implemented** — former blocker (responsibility seeding, TBD-D9) resolved by **D-004** (seed migration `0003`); implementation arrives with its own task; future: `201 Created` with the §4d response shape |
+| POST | `/api/event-assignments` | Create an assignment (§4d) | `201 Created` with the `EventAssignmentRead` shape `{id, event_id, person_id, responsibility: {id, code, name, active}, approval_status}` — always `PENDING`; unknown event/person UUID → 404, unknown responsibility code → 422 |
 
 Roles are **read-only by design**: the six rows are migration-owned reference
 data (docs/05 §5a). No create/update/delete endpoints exist for them —
@@ -305,13 +310,14 @@ behavior may hard-code an answer):
 - Whether the initial status may be chosen by the caller (**TBD-D28**,
   tied to **TBD-D7/D23**).
 
-## 4d. EventAssignment Creation Contract (defined — NOT implemented)
+## 4d. EventAssignment Creation Contract (implemented)
 
-`POST /api/event-assignments` is the contract for the future write path.
-**This section is documentation only: the endpoint does not exist yet.**
-It defines exactly what the future endpoint will accept and return, using
+`POST /api/event-assignments` is implemented per this contract (same
+approach as Person and Event creation, §4a/§4c: contract first — defined
+in a documentation-only task and already reviewed — then implementation).
+It defines exactly what the endpoint accepts and returns, using
 only facts already established by docs/02, docs/03, and the implemented
-schema (migration `0001`) — nothing here adds a business rule, and every
+schema; nothing here adds a business rule, and every
 open question is listed, not guessed.
 
 "Assign Person" is the second step of the approved MVP workflow
@@ -359,8 +365,7 @@ the two implemented creation contracts):
   (not-found *resources*) → **404** with a human-readable `detail`;
   domain-content violations → **422**.
 
-**Still TBD — ~~blocking~~ (formerly blocking; resolved by **D-004**,
-migration `0003`):**
+**Resolved (formerly blocking):**
 
 | # | Question |
 | --- | --- |
@@ -402,9 +407,8 @@ implementation must carry each as an explicit open check or absence):**
 
 ### Response
 
-`201 Created` with the created assignment in the EventAssignment read
-shape (defined here; the future implementation defines the matching
-`EventAssignmentRead` in `app/schemas/`):
+`201 Created` with the created assignment in the `EventAssignmentRead`
+shape (`app/schemas/event_assignment.py`):
 
 ```json
 {
@@ -449,9 +453,9 @@ request contract:
   in `detail` (§4b rule 3 — domain reference data, same shape as
   `POST /api/persons`).
 - duplicates of the same triple → **no constraint exists** (TBD-D11);
-  the endpoint's behavior (create a second row vs. reject) is
-  deliberately unspecified until D11 resolves — the implementation task
-  must surface this, not decide it.
+  the endpoint currently **creates a second row** — the schema-permitted
+  behavior, locked by test as current behavior, explicitly not a business
+  rule: when D11 resolves, endpoint and test change together.
 
 Explicitly unresolved (business questions — no runtime behavior may
 hard-code an answer): ~~D9 (blocking)~~ (**resolved by D-004** — seed
@@ -462,14 +466,19 @@ see the TBD table above.
 ## 5. Tests
 
 The API test files (`tests/test_api_roles.py`, `tests/test_api_persons.py`,
-`tests/test_api_events.py`, `tests/test_api_error_policy.py`) exercise the
+`tests/test_api_events.py`, `tests/test_api_event_assignments.py`,
+`tests/test_api_error_policy.py`) exercise the
 full HTTP stack — routing, dependency injection, response serialization —
 with FastAPI's `TestClient`. The error-policy tests lock the status codes
-and body shapes documented in §4b. The shared `client` fixture
+and body shapes documented in §4b; the assignment tests additionally lock
+the carried-not-interpreted TBDs (D3, D29, D30, D11) as current behavior.
+The shared `client` fixture
 (conftest.py) overrides `get_db` with the in-memory SQLite session, which
 uses `StaticPool` + `check_same_thread=False` because TestClient runs the
 app in a worker thread. PostgreSQL behavior is verified by running the
-application against the real database (§6).
+application against the real database (§6) — including the
+responsibility-seed migration tests (docs/05 §5b) against disposable
+databases.
 
 ## 6. Validation (development)
 
@@ -481,22 +490,21 @@ python -m app.db.check           # real database connectivity
 uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
                                  #       POST /api/persons, GET /api/persons,
                                  #       POST /api/events, GET /api/events,
-                                 #       GET /api/events/{event_id}
+                                 #       GET /api/events/{event_id},
+                                 #       POST /api/event-assignments
 ```
 
 ## 7. Out of Scope (unchanged TBDs)
 
 - **Authentication/authorization** — TBD-A13/A11; no route requires identity
   yet. When auth lands, it will be enforced inside this layer (docs/01 §4).
-- Write endpoints: person creation (§4a) and event creation (§4c) are
-  implemented, plus event listing; event-assignment creation is
-  **contracted (§4d) but not implemented** — its former blocker,
-  responsibility seeding (**TBD-D9**), is resolved by **D-004** (seed
-  migration `0003`, docs/05 §5b); the implementation arrives with its own
-  task. Reports, remaining person operations (update,
-  deactivate, delete), and event status transitions arrive with their own
-  tasks. Roles stay read-only by
+- Write endpoints: person creation (§4a), event creation (§4c), and
+  event-assignment creation (§4d) are implemented. Assignment reads
+  (assignments of an event / of a person) and approval, reports, remaining
+  person operations (update, deactivate, delete), and event status
+  transitions arrive with their own tasks — each carrying its open TBDs
+  (D10/A6/S13 for approval, D19/A9 for reports). Roles stay read-only by
   design (§4). Pagination conventions remain open (docs/01 §4 TBD T4);
-  the error format is **defined** (§4b) and the reserved 404/409 resource
-  rows activate with their first endpoints.
+  the error format is **defined** (§4b) and the reserved 409 row activates
+  with its first endpoint.
 - OpenAPI → TypeScript type generation for the frontend (TBD T3).
