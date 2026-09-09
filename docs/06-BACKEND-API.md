@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads), two write endpoints (person and event creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
+**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads), two write endpoints (person and event creation), the MVP error policy (§4b), and the EventAssignment creation contract (§4d — defined, **not** implemented) established; the API surface is intentionally minimal and grows task by task.
 **Last reviewed:** 2026-09-09
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -94,6 +94,7 @@ apps/api/app/
 | GET | `/api/events` | List events — the calendar-oriented read | Ordered by `planned_at`, then `id`; returns `EventRead` items `{id, title, type, planned_at, status}`; `planned_at` is a timezone-aware instant |
 | GET | `/api/events/{event_id}` | Return one event by id | `EventRead`; unknown-but-valid UUID → `404 {"detail": "Event not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
 | POST | `/api/events` | Create an event, always in `DRAFT` (§4c) | `201 Created` with the `EventRead` shape `{id, title, type, planned_at, status}`; timezone-aware `planned_at` required |
+| POST | `/api/event-assignments` | Create an assignment (§4d) | **Contract defined, NOT implemented** — blocked on responsibility seeding (**TBD-D9**); future: `201 Created` with the §4d response shape |
 
 Roles are **read-only by design**: the six rows are migration-owned reference
 data (docs/05 §5a). No create/update/delete endpoints exist for them —
@@ -304,6 +305,155 @@ behavior may hard-code an answer):
 - Whether the initial status may be chosen by the caller (**TBD-D28**,
   tied to **TBD-D7/D23**).
 
+## 4d. EventAssignment Creation Contract (defined — NOT implemented)
+
+`POST /api/event-assignments` is the contract for the future write path.
+**This section is documentation only: the endpoint does not exist yet.**
+It defines exactly what the future endpoint will accept and return, using
+only facts already established by docs/02, docs/03, and the implemented
+schema (migration `0001`) — nothing here adds a business rule, and every
+open question is listed, not guessed.
+
+"Assign Person" is the second step of the approved MVP workflow
+(docs/02 §8), so the creation need itself is confirmed.
+
+### Domain shape (what an EventAssignment *is*)
+
+```text
+Event + Person + EventResponsibility = EventAssignment
+```
+
+- A **specific Person** takes on a **specific EventResponsibility** for a
+  **specific Event** (docs/02 §2.3). The row itself *is* the assignment;
+  approval is an attribute of it, never a prerequisite for existence
+  (docs/03 §5.6).
+- Event responsibilities are **not** permanent organizational roles
+  (learner/supporter/coach/teacher/referrer/manager) — different concept,
+  different table. Whether permanent roles *restrict* which responsibilities
+  a person may take is **TBD-D8** and is not checked.
+
+### Already established vs. still TBD
+
+**Established** (encoded in the approved schema / migration `0001`, and in
+the two implemented creation contracts):
+
+- All three references (`event_id`, `person_id`, `responsibility_id`) are
+  `NOT NULL` FKs — an assignment without all three cannot exist
+  (docs/03 §5.6).
+- `approval_status` exists as a **PROVISIONAL** attribute with values
+  `PENDING`/`APPROVED`, defaulting to `PENDING` at creation (docs/03 §5.6,
+  docs/05 §5). The provisional values are a placeholder for TBD-D10/A6 —
+  *which* states are real is open, but that creation starts not-approved
+  follows directly from the default.
+- No `UNIQUE` constraint exists on the triple — duplicates are
+  **schema-permitted**; exclusivity is **TBD-D11**.
+- No constraint ties assignments to `persons.active` (**TBD-D3**) or to
+  any role (**TBD-D8**).
+- Reference-data lookups by stable machine `code` are the established
+  input pattern (`POST /api/persons` roles, §4a); `event_responsibilities`
+  has the same `code`/`name` reference-data shape as `roles` (docs/03 §5.5).
+- Failure transport is fixed by the error policy (§4b): malformed/missing
+  fields → FastAPI default 422; unknown-but-valid UUID references
+  (not-found *resources*) → **404** with a human-readable `detail`;
+  domain-content violations → **422**.
+
+**Still TBD — blocking (the endpoint cannot ship before these resolve):**
+
+| # | Question |
+| --- | --- |
+| **TBD-D9** | The responsibility taxonomy. `event_responsibilities` is deliberately **unseeded** (docs/05 §5a) — no responsibility rows exist to reference, so no valid `responsibility` value can be resolved yet. Seeding requires a business decision on the final taxonomy (or a conscious decision to seed the known examples). |
+
+**Still TBD — non-blocking (contract shape unaffected; the future
+implementation must carry each as an explicit open check or absence):**
+
+| # | Question | Effect on the contract |
+| --- | --- | --- |
+| **TBD-D10 / TBD-A6 / TBD-S13** | Real approval states, approval scope, approver identity | `approval_status` values are provisional; creation semantics ("starts PENDING") may change with the real approval workflow |
+| **TBD-D11** | Exclusivity: one person per responsibility per event? | No uniqueness is enforced; the endpoint's duplicate behavior is deliberately unspecified until resolved |
+| **TBD-D3** | May an inactive person be assigned? | No check encoded; the contract neither rejects nor promises to accept inactive persons |
+| **TBD-D8** | Role-based restrictions on responsibilities | No check encoded |
+| **TBD-D29** (new) | Event-status precondition: from which event statuses (D-002 set) may assignments be created (e.g., may persons be assigned to a `COMPLETED` or `CANCELLED` event)? No evidence either way; tied to the transition matrix **TBD-D7** | The contract accepts any existing event until resolved; the future endpoint must not hard-code an answer |
+| **TBD-D30** (new) | May an assignment reference an **inactive** `event_responsibilities` row (`active=false`, retire mechanism per **TBD-S2**)? | Unspecified until resolved |
+
+*(TBD-D29/D30 are registered in docs/02 §7 by this task.)*
+
+### Request
+
+| Field | Required | Type | Notes |
+| --- | --- | --- | --- |
+| `event_id` | yes | UUID | The event being staffed. Must reference an existing `events` row (FK, docs/03 §5.6). Status-precondition rules are **TBD-D29** — not checked. |
+| `person_id` | yes | UUID | The person taking the responsibility. Must reference an existing `persons` row (FK). Active/inactive is **TBD-D3** — surfaced, not interpreted. Role restrictions are **TBD-D8** — not checked. |
+| `responsibility` | yes | string (responsibility **code**) | The stable machine key of an `event_responsibilities` row (docs/03 §5.5), following the §4a role-by-code precedent. An unknown code → **422** (domain reference data, §4b rule 3). Whether inactive rows are accepted is **TBD-D30**. |
+
+**Explicitly not in the request:**
+
+- `id` — server-generated UUID (docs/03 §3).
+- `approval_status` — **not settable by the caller.** Like `status` on
+  event creation (§4c), creation always produces the default (`PENDING`,
+  PROVISIONAL — TBD-D10/A6); a supplied value is ignored like any other
+  unknown field. Approval, when designed, is its own future
+  operation/endpoint (TBD-S13) — creation is existence, not approval
+  (docs/03 §5.6).
+- `created_at`/`updated_at` — system-set audit (docs/03 §4).
+- Any approver identity (`approved_by`/…) — not modeled, TBD-S13.
+
+### Response
+
+`201 Created` with the created assignment in the EventAssignment read
+shape (defined here; the future implementation defines the matching
+`EventAssignmentRead` in `app/schemas/`):
+
+```json
+{
+  "id": "…uuid…",
+  "event_id": "…uuid…",
+  "person_id": "…uuid…",
+  "responsibility": {"id": "…uuid…", "code": "registration", "name": "Registration", "active": true},
+  "approval_status": "PENDING"
+}
+```
+
+- The three references are echoed as given (UUIDs as strings).
+- `responsibility` is returned as the full reference-data object
+  (`{id, code, name, active}` — the `EventResponsibility` counterpart of
+  `RoleRead`), not a bare code, so read and write shapes stay symmetric
+  with the persons pattern (`PersonRead.roles`).
+- `approval_status` is always `"PENDING"` in the creation response
+  (PROVISIONAL default — TBD-D10).
+- Audit timestamps are not exposed (§3 rule 2).
+- `event`/`person` are **not** embedded — they are identified by id; their
+  full representations are served by their own endpoints. Nesting the
+  event (with its assignments) would recurse.
+
+### Transactional expectation
+
+Creation writes exactly **one row** in `event_assignments` (no related
+rows exist to write). If the endpoint ever grows related writes, they
+follow the §4a atomicity rule: all-or-nothing in one transaction.
+
+### Validation boundaries
+
+Guaranteed by the approved schema (docs/03 §5.6) and enforced by the
+request contract:
+
+- all three fields must be present and well-typed → FastAPI default 422
+  on missing/malformed input (including non-UUID `event_id`/`person_id`).
+- an unknown-but-valid-UUID `event_id`/`person_id` (no such row) → **404**
+  `{"detail": "Event not found"}` / `{"detail": "Person not found"}` —
+  §4b rule 4: not-found *resources* (this activates the reserved
+  resource-404 row for these references).
+- an unknown `responsibility` code → **422** with the unknown code named
+  in `detail` (§4b rule 3 — domain reference data, same shape as
+  `POST /api/persons`).
+- duplicates of the same triple → **no constraint exists** (TBD-D11);
+  the endpoint's behavior (create a second row vs. reject) is
+  deliberately unspecified until D11 resolves — the implementation task
+  must surface this, not decide it.
+
+Explicitly unresolved (business questions — no runtime behavior may
+hard-code an answer): D9 (blocking), D29, D30, D11, D3, D8, D10/A6/S13 —
+see the TBD table above.
+
 ## 5. Tests
 
 The API test files (`tests/test_api_roles.py`, `tests/test_api_persons.py`,
@@ -334,9 +484,11 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
 - **Authentication/authorization** — TBD-A13/A11; no route requires identity
   yet. When auth lands, it will be enforced inside this layer (docs/01 §4).
 - Write endpoints: person creation (§4a) and event creation (§4c) are
-  implemented, plus event listing; assignments, reports, remaining person
-  operations (update, deactivate, delete), and event status transitions
-  arrive with their own tasks. Roles stay read-only by
+  implemented, plus event listing; event-assignment creation is
+  **contracted (§4d) but not implemented** — blocked on responsibility
+  seeding (**TBD-D9**); reports, remaining person operations (update,
+  deactivate, delete), and event status transitions arrive with their own
+  tasks. Roles stay read-only by
   design (§4). Pagination conventions remain open (docs/01 §4 TBD T4);
   the error format is **defined** (§4b) and the reserved 404/409 resource
   rows activate with their first endpoints.
