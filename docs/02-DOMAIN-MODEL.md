@@ -33,9 +33,20 @@ requires it.
 | **D-001** | A Person **may hold multiple permanent organizational roles simultaneously**. |
 | **D-002** | The initial Event status set is exactly: **DRAFT, SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED**. |
 | **D-003** | EventReport is **optional**: an Event has **zero or one** EventReport. A completed Event may have a report, but a report is not mandatory. |
+| **D-004** | The initial EventResponsibility reference-data set is exactly: **pre_introduction, welcome_reception, technique_execution, persuasion, registration, follow_up** — seeded as migration-owned rows. The set can grow later (data, not enum); the `code`s are stable machine keys. |
 
 These are the only approved domain decisions so far. Everything not covered
 by them remains TBD (§7).
+
+**D-004 provenance (2026-09-09):** resolves **TBD-D9** for the MVP by
+consciously seeding the six example responsibilities that were already
+documented in three places (this document §2.3, docs/03 §5.5, docs/05 §5a)
+as the known examples. No responsibility beyond the six documented ones is
+added, no `code` is renamed, and no synonym/translation duplicate is
+introduced. Scope note: D-004 fixes the **initial seeded set** — the
+longer-term question whether responsibilities should also be creatable at
+runtime (free text / templates / admin-managed) remains open under
+**TBD-D9 (narrowed)**.
 
 ---
 
@@ -142,11 +153,11 @@ approved schema (docs/03 §5.4, §4), not new decisions:
   by the caller.
 - **Assignments are not part of creation**: an EventAssignment is its own
   entity (§2.3) with open approval (**TBD-D10/A6**), exclusivity
-  (**TBD-D11**), and role-restriction (**TBD-D8**) semantics, and
-  `event_responsibilities` rows are not seeded yet (docs/05 — deliberately
-  unseeded until D9 resolves). Assignments arrive via their own future
-  endpoint(s). Likewise an EventReport is never part of creation — it is a
-  post-event record (D-003).
+  (**TBD-D11**), and role-restriction (**TBD-D8**) semantics. Assignments
+  arrive via their own future endpoint(s) — the creation contract is
+  defined in docs/06 §4d, blocked until D-004's seed landed (now done,
+  migration `0003`). Likewise an EventReport is never part of creation —
+  it is a post-event record (D-003).
 
 The API-level creation contract (request/response shape, transport of
 failures) is defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4c and
@@ -164,7 +175,7 @@ operationally do for one specific event. Any person may potentially be assigned
 any responsibility regardless of their permanent role — whether *restrictions*
 by role exist is **TBD-D8**.
 
-**Known example responsibilities (examples only, not a final taxonomy):**
+**Known example responsibilities — now the initial seeded set (D-004):**
 
 - Pre-introduction
 - Welcome / reception
@@ -173,8 +184,13 @@ by role exist is **TBD-D8**.
 - Registration
 - Follow-up
 
-Whether the final taxonomy is a fixed enumerable list, free text, or
-per-event-type templates is **TBD-D9**.
+~~Whether the final taxonomy is a fixed enumerable list, free text, or
+per-event-type templates is **TBD-D9**.~~ **[RESOLVED for the MVP — D-004]**:
+the six documented examples above are seeded as the initial reference-data
+set (`code`s: `pre_introduction`, `welcome_reception`,
+`technique_execution`, `persuasion`, `registration`, `follow_up`). Whether
+responsibilities may also be created at runtime (free text / templates /
+admin-managed) remains open under **TBD-D9 (narrowed)**.
 
 **Known behavior:** the manager wants to **approve assignments** (confirmed
 need). Whether *every* assignment requires approval or only certain kinds is
@@ -190,9 +206,9 @@ second step of the approved MVP workflow (§8), so the creation need is
 confirmed. The API-level creation contract (request/response shape,
 reference identification, validation boundaries, error transport) is
 defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4d for the future
-`POST /api/event-assignments` — **not implemented yet**; it is blocked on
-the responsibility taxonomy (**TBD-D9**: `event_responsibilities` is
-deliberately unseeded, docs/05 §5a) and carries the other open assignment
+`POST /api/event-assignments` — **not implemented yet**; its former blocker
+(responsibility seeding, **TBD-D9**) is resolved by **D-004** (seed
+migration `0003`), and the contract carries the remaining open assignment
 semantics (D8, D10/A6, D11, D3, D29, D30) as explicit TBDs.
 
 ### 2.4 Task
@@ -335,7 +351,7 @@ erDiagram
         status status "DRAFT|SCHEDULED|IN_PROGRESS|COMPLETED|CANCELLED (D-002)"
     }
     EVENT_ASSIGNMENT {
-        string responsibility "examples only, TBD-D9"
+        string responsibility "initial seeded set (D-004)"
         approval approval "TBD-D10"
     }
     TASK {
@@ -393,7 +409,7 @@ resolved by an approved decision (§1.1).
 | TBD-D6 | Recurring events: modeled natively or as separate instances | open |
 | ~~TBD-D7~~ | ~~Complete event status machine; what "complete" means; who completes~~ | **partially resolved by D-002**: the status *set* is approved (DRAFT/SCHEDULED/IN_PROGRESS/COMPLETED/CANCELLED); the allowed-transition matrix, transition authorization, and operational meaning of "completed" remain open |
 | TBD-D8 | Role-based restrictions on event responsibilities | open |
-| TBD-D9 | Responsibility taxonomy: fixed list, free text, or templates | open |
+| ~~TBD-D9~~ | ~~Responsibility taxonomy: fixed list, free text, or templates~~ | **partially resolved by D-004**: the six documented examples are seeded as the initial reference-data set (migration `0003`); whether responsibilities may also be created at runtime (free text / templates / admin-managed) remains open |
 | TBD-D10 | Assignment approval states | open |
 | TBD-D11 | Exclusivity: one person per responsibility per event? | open |
 | TBD-D12 | Which tasks require approval/review | open |

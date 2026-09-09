@@ -152,7 +152,9 @@ A planned branch activity.
 ### 5.5 `event_responsibilities`
 
 Reusable definitions of operational responsibilities for events. **Data, not
-an enum** (taxonomy TBD-D9): known example rows are seedable —
+an enum** (taxonomy TBD-D9): ~~known example rows are seedable~~
+**[RESOLVED for the MVP — D-004]**: the six documented examples are seeded
+by migration `0003` (docs/05 §5b) —
 `pre_introduction`, `welcome_reception`, `technique_execution`,
 `persuasion`, `registration`, `follow_up` — and the set can grow without a
 schema change. Responsibilities are defined **once** here and referenced by
@@ -265,7 +267,7 @@ the application validates against the current known list. The alternative
 (an enum/table now) would encode an unapproved taxonomy, which violates the
 design rule.
 
-### 6.3 Event responsibility — data table (taxonomy TBD-D9)
+### 6.3 Event responsibility — data table (taxonomy TBD-D9, initial set seeded per D-004)
 
 `event_responsibilities` is a first-class reference table (rows, not enum):
 responsibilities are reused across events and assignments, they need display
@@ -474,7 +476,7 @@ labeled technical choices above).
 | TBD-D6 | Event recurrence modeling |
 | TBD-D7 / TBD-D23 | Status transition matrix and authorization (not encoded) |
 | TBD-D8 | Role-based restrictions on responsibilities (not encoded) |
-| TBD-D9 | Final responsibility taxonomy (kept as data) |
+| ~~TBD-D9: Final responsibility taxonomy (kept as data)~~ | **partially resolved by D-004**: initial six-row seed via migration `0003`; runtime creation of responsibilities remains open |
 | TBD-D10 / TBD-A6 | Assignment approval states and scope — `approval_status` values are PROVISIONAL |
 | TBD-D11 | Responsibility exclusivity per event (no unique constraint) |
 | TBD-D19 | Report authorship/edit permissions (`author_id` semantics provisional) |
