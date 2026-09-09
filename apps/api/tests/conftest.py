@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401 — register all models on Base.metadata
 from app.db.base import Base
@@ -19,7 +20,15 @@ from app.db.base import Base
 
 @pytest.fixture()
 def engine() -> Engine:
-    engine = create_engine("sqlite:///:memory:")
+    # StaticPool + check_same_thread=False: FastAPI's TestClient runs the
+    # application in a worker thread, so the in-memory database must be one
+    # shared connection visible across threads (the default per-thread pool
+    # would hand the app thread a fresh, empty database).
+    engine = create_engine(
+        "sqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
 
     @event.listens_for(engine, "connect")
     def _enable_foreign_keys(dbapi_connection, _connection_record) -> None:
