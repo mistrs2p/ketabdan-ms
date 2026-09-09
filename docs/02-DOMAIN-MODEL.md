@@ -117,6 +117,40 @@ DRAFT → SCHEDULED → IN_PROGRESS → COMPLETED
 **Status semantics note:** what "completed" *means* operationally (A8) is
 still open — the approved set gives the states, not their entry conditions.
 
+**Creation (contract for the future write path):**
+
+"Create Event" is the first step of the approved MVP workflow (§8), so the
+creation need is confirmed. Established facts — already encoded in the
+approved schema (docs/03 §5.4, §4), not new decisions:
+
+- `title` is **required** at creation (single free-text field; emptiness,
+  whitespace, and length rules are not established anywhere → **TBD-D25**).
+- `type` is **required** at creation (free text — no closed taxonomy
+  exists; the known examples are examples only, **TBD-D5**). What the API
+  accepts as a type value before D5 resolves is an open API question
+  (**TBD-D26**).
+- `planned_at` is **required** at creation and is a **timezone-aware
+  instant** (`timestamptz`, docs/03 §4) — never a bare date. Whether a
+  past `planned_at` may be given at creation is **TBD-D27**. Recurrence is
+  not supported at creation (or anywhere else) — **TBD-D6**.
+- `status` **defaults to `DRAFT`** at creation (schema default). Whether a
+  caller may set a different initial status at creation — or whether every
+  event starts as DRAFT and moves only through (unresolved) transitions —
+  is **TBD-D28**, tied to the transition matrix (**TBD-D7**) and its
+  authorization (**TBD-D23**).
+- Audit timestamps (`created_at`/`updated_at`) are set by the system, not
+  by the caller.
+- **Assignments are not part of creation**: an EventAssignment is its own
+  entity (§2.3) with open approval (**TBD-D10/A6**), exclusivity
+  (**TBD-D11**), and role-restriction (**TBD-D8**) semantics, and
+  `event_responsibilities` rows are not seeded yet (docs/05 — deliberately
+  unseeded until D9 resolves). Assignments arrive via their own future
+  endpoint(s). Likewise an EventReport is never part of creation — it is a
+  post-event record (D-003).
+
+The API-level creation contract (request/response shape, transport of
+failures) is defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4c.
+
 ### 2.3 EventAssignment
 
 The relationship between an **Event** and a **Person** who takes on an
@@ -364,6 +398,10 @@ resolved by an approved decision (§1.1).
 | ~~TBD-D22~~ | ~~Role data representation (implementation-level, decide at schema time)~~ | **resolved at schema level: the `person_roles` join table (docs/03 §5.3); D-001 semantics unchanged** |
 | TBD-D23 | Authorization of event status transitions — who may move an event between states (incl. who completes/cancels) | open (new — surfaced by D-002) |
 | TBD-D24 | Minimum role requirement at creation: may a Person exist with **zero** roles, or is at least one role required? | open (new — surfaced by the Person creation contract, docs/06 §4a; the schema permits zero roles, so this is a business question, not a technical one) |
+| TBD-D25 | Event title validation rules: emptiness/whitespace handling, maximum length | open (new — surfaced by the Event creation contract, docs/06 §4c; no rule is established anywhere; nothing may hard-code one) |
+| TBD-D26 | Event `type` acceptance at creation: is any non-empty string stored until the taxonomy (**TBD-D5**) resolves, or does the API validate against a maintained list first? | open (new — surfaced by the Event creation contract, docs/06 §4c) |
+| TBD-D27 | May an Event be created with a past `planned_at`? | open (new — surfaced by the Event creation contract, docs/06 §4c; no evidence either way — nothing may hard-code an answer) |
+| TBD-D28 | Initial event status at creation: always `DRAFT`, or may the caller create directly in another status? | open (new — surfaced by the Event creation contract, docs/06 §4c; tied to the transition matrix **TBD-D7** and its authorization **TBD-D23**) |
 | ~~TBD-A1~~ | ~~Multi-role persons~~ | **resolved by D-001: multiple simultaneous roles allowed** |
 | TBD-A3/A4 | Availability semantics/usage | open |
 | TBD-A6 | Approval scope of assignments | open |
