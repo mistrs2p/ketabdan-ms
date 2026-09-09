@@ -1,4 +1,5 @@
 import { getTranslations } from "next-intl/server";
+import { Link } from "@/i18n/routing";
 import { getPersons, ApiError, type PersonRead } from "@/lib/api";
 import { PeopleTable } from "./PeopleTable";
 import { PeopleEmptyState } from "./PeopleEmptyState";
@@ -10,8 +11,8 @@ import { PeopleErrorState } from "./PeopleErrorState";
 // never re-sorts.
 //
 // States: loading via the sibling loading.tsx (streaming), error /
-// empty / data handled here. The "Add person" button is visual-only —
-// creation is a later task and must not fake success.
+// empty / data handled here. The "Add person" button navigates to the
+// Create Person flow (/people/new) via the localized routing helpers.
 export async function PeoplePage() {
   const t = await getTranslations("people");
   const tTitle = await getTranslations("app.pages.people");
@@ -37,14 +38,12 @@ export async function PeoplePage() {
           <h1 className="text-2xl font-bold">{tTitle("title")}</h1>
           <p className="text-muted-foreground">{t("description")}</p>
         </div>
-        <button
-          type="button"
-          disabled
-          title={t("addPersonDisabledHint")}
-          className="cursor-not-allowed rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground opacity-50"
+        <Link
+          href="/people/new"
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
         >
           {t("addPerson")}
-        </button>
+        </Link>
       </header>
 
       {error ? <PeopleErrorState error={error} /> : null}
