@@ -279,3 +279,116 @@ class TestCreateEventAssignment:
             assert response.status_code == 201
 
         assert len(session.scalars(select(EventAssignment)).all()) == 2
+
+
+class TestListEventAssignments:
+    """GET /api/event-assignments — the list read (docs/06 §4d)."""
+
+    def test_list_returns_empty_array_when_table_empty(
+        self, client: TestClient
+    ) -> None:
+        response = client.get("/api/event-assignments")
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_list_returns_assignmentread_items_ordered_by_id(
+        self, client: TestClient, session: Session
+    ) -> None:
+        event, person, responsibility = seed_fixture(session)
+        assignment = EventAssignment(
+            event_id=event.id,
+            person_id=person.id,
+            responsibility_id=responsibility.id,
+        )
+        session.add(assignment)
+        session.commit()
+        first_id = assignment.id
+
+        # A second assignment on a different event, created afterwards so
+        # the id ordering is exercised (UUIDs are random — insert-order
+        # independence is checked by sorting whatever ids exist).
+        second_event = Event(
+            title="Gathering",
+            type="gathering",
+            planned_at=datetime(2026, 9, 26, 17, 0, tzinfo=UTC),
+        )
+        session.add(second_event)
+        session.commit()
+        second = EventAssignment(
+            event_id=second_event.id,
+            person_id=person.id,
+            responsibility_id=responsibility.id,
+        )
+        session.add(second)
+        session.commit()
+
+        response = client.get("/api/event-assignments")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body) == 2
+        for item in body:
+            # Exactly the EventAssignmentRead shape — reused, not a
+            # competing schema; no audit columns, no embedded event/person.
+            assert set(item) == {
+                "id",
+                "event_id",
+                "person_id",
+                "responsibility",
+                "approval_status",
+            }
+        # Deterministic ordering by id ASC (no business sort documented).
+        assert [item["id"] for item in body] == sorted(
+            [str(first_id), str(second.id)]
+        )
+
+
+class TestGetEventAssignment:
+    """GET /api/event-assignments/{assignment_id} — the single read."""
+
+    def test_get_returns_assignmentread_shape(
+        self, client: TestClient, session: Session
+    ) -> None:
+        event, person, responsibility = seed_fixture(session)
+        assignment = EventAssignment(
+            event_id=event.id,
+            person_id=person.id,
+            responsibility_id=responsibility.id,
+        )
+        session.add(assignment)
+        session.commit()
+
+        response = client.get(f"/api/event-assignments/{assignment.id}")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert set(body) == {
+            "id",
+            "event_id",
+            "person_id",
+            "responsibility",
+            "approval_status",
+        }
+        assert body["id"] == str(assignment.id)
+        assert body["event_id"] == str(event.id)
+        assert body["person_id"] == str(person.id)
+        assert body["responsibility"]["id"] == str(responsibility.id)
+        assert body["responsibility"]["code"] == "registration"
+        assert body["approval_status"] == "PENDING"
+
+    def test_unknown_uuid_is_404_resource_not_found(
+        self, client: TestClient
+    ) -> None:
+        response = client.get(f"/api/event-assignments/{GHOST_UUID}")
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Event assignment not found"}
+
+    def test_malformed_uuid_is_fastapi_default_422(
+        self, client: TestClient
+    ) -> None:
+        response = client.get("/api/event-assignments/not-a-uuid")
+
+        assert response.status_code == 422
+        assert isinstance(response.json()["detail"], list)
