@@ -1,16 +1,17 @@
-"""API tests for the persons endpoint.
+"""API tests for the persons endpoints.
 
 Same approach as the roles tests (docs/06 §5): the shared `client` fixture
 runs the full HTTP stack against the in-memory SQLite session. Roles are
 created directly in the test session — they mirror the reference rows seeded
-by Alembic migration 0002, but the endpoint itself reads whatever is in the
-database.
+by Alembic migration 0002, but the endpoints themselves read whatever is in
+the database.
 """
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Person, Role
+from app.models import Person, PersonRole, Role
 
 
 def make_role(code: str, name: str) -> Role:
@@ -83,3 +84,99 @@ def test_persons_reflect_inactive_state_and_missing_phone(
     (person,) = response.json()
     assert person["active"] is False
     assert person["phone"] is None
+
+
+class TestCreatePerson:
+    """POST /api/persons — the creation contract (docs/06 §4a)."""
+
+    def test_create_minimal_person(self, client: TestClient, session: Session) -> None:
+        response = client.post("/api/persons", json={"name": "Seyed"})
+
+        assert response.status_code == 201
+        body = response.json()
+        assert set(body) == {"id", "name", "phone", "active", "roles"}
+        assert body["name"] == "Seyed"
+        # Contract defaults: phone absent → null, active → true, roles → [].
+        assert body["phone"] is None
+        assert body["active"] is True
+        assert body["roles"] == []
+        # Persisted exactly once.
+        persisted = session.scalars(select(Person)).all()
+        assert [p.name for p in persisted] == ["Seyed"]
+
+    def test_create_person_with_multiple_roles(
+        self, client: TestClient, session: Session
+    ) -> None:
+        session.add_all(
+            [
+                make_role("learner", "Learner / Student"),
+                make_role("supporter", "Supporter"),
+            ]
+        )
+        session.commit()
+
+        response = client.post(
+            "/api/persons",
+            json={
+                "name": "Zahra",
+                "phone": "09120000000",
+                "roles": ["supporter", "learner"],
+            },
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["phone"] == "09120000000"
+        # Nested roles sorted by code (PersonRead), both memberships written.
+        assert [role["code"] for role in body["roles"]] == ["learner", "supporter"]
+        person = session.scalars(select(Person)).one()
+        assert len(person.role_links) == 2
+
+    def test_create_person_collapses_duplicate_role_codes(
+        self, client: TestClient, session: Session
+    ) -> None:
+        session.add(make_role("supporter", "Supporter"))
+        session.commit()
+
+        response = client.post(
+            "/api/persons", json={"name": "Ali", "roles": ["supporter", "supporter"]}
+        )
+
+        assert response.status_code == 201
+        assert [role["code"] for role in response.json()["roles"]] == ["supporter"]
+        person = session.scalars(select(Person)).one()
+        assert len(person.role_links) == 1  # a person holds a *set* of roles
+
+    def test_create_person_with_unknown_role_code_writes_nothing(
+        self, client: TestClient, session: Session
+    ) -> None:
+        session.add(make_role("supporter", "Supporter"))
+        session.commit()
+
+        response = client.post(
+            "/api/persons", json={"name": "Reza", "roles": ["supporter", "ghost"]}
+        )
+
+        assert response.status_code == 422
+        assert "ghost" in response.json()["detail"]
+        # Atomicity: nothing was written, not even a partial person.
+        assert session.scalars(select(Person)).all() == []
+        assert session.scalars(select(PersonRole)).all() == []
+
+    def test_create_person_requires_name(self, client: TestClient) -> None:
+        response = client.post("/api/persons", json={})
+
+        assert response.status_code == 422
+
+    def test_create_person_carries_active_as_given(
+        self, client: TestClient, session: Session
+    ) -> None:
+        # `active` is carried as stored; its business meaning is TBD-D3 and
+        # is not interpreted by the endpoint.
+        response = client.post(
+            "/api/persons", json={"name": "Maryam", "active": False}
+        )
+
+        assert response.status_code == 201
+        assert response.json()["active"] is False
+        assert session.scalars(select(Person)).one().active is False
