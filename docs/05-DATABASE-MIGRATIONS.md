@@ -95,6 +95,32 @@ across environments and autogenerate diffs stay stable.
 
 `downgrade()` drops the schema in dependency-safe reverse order.
 
+## 5a. The Seed Migration (`0002`)
+
+Revision `0002_seed_initial_roles` inserts the **six confirmed permanent
+roles** into `roles` as reference data (docs/03 §5.2, docs/00 §3):
+`learner` (Learner / Student), `supporter`, `coach`, `teacher`, `referrer`,
+`manager`.
+
+- **Why these six:** they are the confirmed set of primary roles from
+  discovery (docs/00 §7 ✅3) — confirmed reference data, not a speculative
+  taxonomy. The schema design (docs/03 §5.2) explicitly defines them as the
+  seed rows.
+- **EventResponsibilities are deliberately NOT seeded.** The example
+  responsibilities (`pre_introduction`, `welcome_reception`,
+  `technique_execution`, `persuasion`, `registration`, `follow_up`) are known
+  *examples* only; the taxonomy remains unresolved (**TBD-D9**) and is not
+  turned into finalized reference data here.
+- **How it behaves:** each role is inserted with a hard-coded stable UUID (no
+  generation library), using `INSERT ... ON CONFLICT (code) DO NOTHING`
+  against the existing `uq_roles_code` unique constraint — re-executing the
+  insert cannot create duplicates or clobber existing rows. Audit timestamps
+  are left to the existing database defaults. `downgrade()` deletes **only
+  the six migration-owned rows (by id)** — never a broad `DELETE FROM roles`
+  — so unrelated role rows survive a downgrade.
+- The seed lives in the versioned migration history (not application startup,
+  `create_all()`, or ad-hoc SQL), per the rules in §6.
+
 ## 6. Rules
 
 1. **Migrations are version-controlled and reviewed like any other code.**
@@ -129,6 +155,6 @@ See the task's final report for the results actually executed.
 
 ## 8. Out of Scope
 
-- Seeding the six roles / example responsibilities (docs/04 §7 — future task).
+- Seeding EventResponsibilities (taxonomy TBD-D9 — not confirmed reference data).
 - Business APIs, CRUD endpoints, auth — later tasks.
 - Any production deployment/migration (no production environment exists).
