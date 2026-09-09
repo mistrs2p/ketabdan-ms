@@ -54,7 +54,6 @@
   "people": {
     "description": "Branch members and their responsibilities.",
     "addPerson": "Add person",
-    "addPersonDisabledHint": "Person creation will be implemented in a later task.",
     "table": {
       "caption": "Branch members",
       "name": "Name",
@@ -80,6 +79,35 @@
     "empty": {
       "title": "No people have been added yet",
       "description": "Branch members appear here once they are added."
+    },
+    "create": {
+      "title": "Add person",
+      "description": "Create a new branch member.",
+      "nameLabel": "Name",
+      "phoneLabel": "Phone",
+      "phoneHint": "Optional. No format is required.",
+      "rolesLabel": "Roles",
+      "rolesHint": "Optional. Zero or more roles may be selected.",
+      "activeLabel": "Active",
+      "submit": "Create person",
+      "submitting": "Creating…",
+      "cancel": "Cancel",
+      "cancelBackTo": "Cancel and return to {page}",
+      "loading": "Loading the create person form…",
+      "validation": {
+        "nameRequired": "Name is required."
+      },
+      "error": {
+        "network": "The person could not be created. Check that the backend service is running and try again.",
+        "server": "The person could not be created. Try again in a moment.",
+        "validation": "The person could not be created. Check the entered values and try again."
+      },
+      "rolesError": {
+        "title": "Roles are unavailable",
+        "network": "Roles could not be loaded. Check that the backend service is running and try again.",
+        "empty": "No roles are available yet. Person creation requires role reference data.",
+        "back": "Back to people"
+      }
     }
   }
 }
