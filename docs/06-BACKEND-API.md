@@ -34,9 +34,11 @@ response model (same API schema) → JSON
 apps/api/app/
 ├── api/
 │   ├── __init__.py
+│   ├── persons.py      # persons router
 │   └── roles.py        # one router module per resource
 ├── schemas/
 │   ├── __init__.py
+│   ├── person.py       # PersonRead (reuses RoleRead for nested roles)
 │   └── role.py         # RoleRead — request/response models for roles
 └── main.py             # FastAPI app: include_router() + /api/health
 ```
@@ -60,11 +62,16 @@ apps/api/app/
    cross-module coordination), that logic moves into a service/domain
    function the router calls. Wrapping every trivial query "for symmetry"
    is over-engineering, not architecture.
-5. **Deterministic ordering** on list endpoints (roles are ordered by
-   `code`) — stable responses make testing and diffing reliable.
+5. **Deterministic ordering** on list endpoints (roles by `code`, persons by
+   `name` then `id`, a person's nested roles by `code`) — stable responses
+   make testing and diffing reliable.
 6. **No business rules are invented here.** If a route needs a rule that is
    TBD (docs/00 §7), the route waits; the API follows the domain decisions,
    never the other way around.
+7. **Eager-load collection relations on list endpoints** (e.g.
+   `selectinload` for a person's roles) so serialization does not issue one
+   query per row. A schema may normalize output order (e.g. `PersonRead`
+   sorts roles by `code`) — presentation detail, not a business rule.
 
 ## 4. Endpoints
 
@@ -72,20 +79,28 @@ apps/api/app/
 | --- | --- | --- | --- |
 | GET | `/api/health` | Liveness check | No database involved; works without `DATABASE_URL` |
 | GET | `/api/roles` | List the permanent organizational roles (reference data, seeded by migration `0002`) | Read-only; ordered by `code`; returns `[{id, code, name}]` |
+| GET | `/api/persons` | List branch members with their permanent roles (D-001) | Read-only; ordered by `name`, then `id`; returns `[{id, name, phone, active, roles: [{id, code, name}]}]` |
 
 Roles are **read-only by design**: the six rows are migration-owned reference
 data (docs/05 §5a). No create/update/delete endpoints exist for them —
 changing the confirmed role set is a schema-level (migration) decision, not a
 runtime operation.
 
+Persons are currently read-only too: listing is confirmed visibility need;
+creation/assignment flows arrive with their own tasks and must not invent
+answers to open questions (name structure TBD-D1, phone uniqueness TBD-D2,
+inactive semantics TBD-D3). `PersonRead` surfaces `active` and `phone`
+exactly as stored, without interpreting them.
+
 ## 5. Tests
 
-`tests/test_api_roles.py` exercises the full HTTP stack — routing, dependency
-injection, response serialization — with FastAPI's `TestClient`, overriding
-`get_db` with the shared in-memory SQLite session (conftest.py uses
-`StaticPool` + `check_same_thread=False` because TestClient runs the app in a
-worker thread). PostgreSQL behavior is verified by running the application
-against the real database (§6).
+The API test files (`tests/test_api_roles.py`, `tests/test_api_persons.py`)
+exercise the full HTTP stack — routing, dependency injection, response
+serialization — with FastAPI's `TestClient`. The shared `client` fixture
+(conftest.py) overrides `get_db` with the in-memory SQLite session, which
+uses `StaticPool` + `check_same_thread=False` because TestClient runs the
+app in a worker thread. PostgreSQL behavior is verified by running the
+application against the real database (§6).
 
 ## 6. Validation (development)
 
@@ -101,6 +116,7 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles
 
 - **Authentication/authorization** — TBD-A13/A11; no route requires identity
   yet. When auth lands, it will be enforced inside this layer (docs/01 §4).
-- Write endpoints for roles (see §4), persons/events/assignments APIs,
+- Write endpoints of any kind (roles are read-only by design, §4; person
+  creation/update and events/assignments APIs arrive with their own tasks),
   pagination and error-format conventions (docs/01 §4 TBDs T4/T5).
 - OpenAPI → TypeScript type generation for the frontend (TBD T3).

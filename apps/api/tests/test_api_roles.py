@@ -1,22 +1,15 @@
 """API tests for the roles endpoint.
 
-Uses FastAPI's TestClient against the in-memory SQLite fixtures from
-conftest.py: the `get_db` dependency is overridden with the test session, so
-the full HTTP stack (routing, validation, response serialization) runs
-without PostgreSQL. The live PostgreSQL behavior is additionally exercised
-by running the application against the real database (docs/06,
-Validation).
+Uses the shared `client` fixture (conftest.py): FastAPI's TestClient with
+`get_db` overridden by the in-memory SQLite session, so the full HTTP stack
+(routing, validation, response serialization) runs without PostgreSQL. The
+live PostgreSQL behavior is additionally exercised by running the
+application against the real database (docs/06, Validation).
 """
 
-from collections.abc import Iterator
-from typing import cast
-
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db
-from app.main import app
 from app.models import Role
 
 # The six confirmed roles (docs/03 §5.2) — the same set seeded by
@@ -29,19 +22,6 @@ CONFIRMED_ROLES: dict[str, str] = {
     "referrer": "Referrer",
     "manager": "Manager",
 }
-
-
-@pytest.fixture()
-def client(session: Session) -> Iterator[TestClient]:
-    """TestClient wired to the isolated SQLite session."""
-
-    def override_get_db() -> Iterator[Session]:
-        yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.pop(get_db, None)
 
 
 def test_roles_returns_empty_list_when_table_empty(client: TestClient) -> None:
@@ -70,4 +50,4 @@ def test_roles_returns_the_six_confirmed_reference_roles(
     # Response shape: exactly id / code / name — no leaked audit columns.
     for role in body:
         assert set(role) == {"id", "code", "name"}
-        assert cast(str, role["id"])
+        assert role["id"]
