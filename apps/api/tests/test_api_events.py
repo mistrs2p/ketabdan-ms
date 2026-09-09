@@ -1,10 +1,12 @@
-"""API tests for the events endpoint.
+"""API tests for the events endpoints.
 
 Same approach as the persons tests (docs/06 §5): the shared `client`
 fixture runs the full HTTP stack against the in-memory SQLite session.
-These tests lock the Event creation contract (docs/06 §4c): required
-title/type/planned_at, always-DRAFT status, timezone-aware instants only,
-and nothing else written.
+The creation tests lock the Event creation contract (docs/06 §4c):
+required title/type/planned_at, always-DRAFT status, timezone-aware
+instants only, and nothing else written. The listing tests lock the
+calendar-oriented read: the `EventRead` shape, deterministic order, and
+status surfaced as stored.
 """
 
 from datetime import datetime, timezone
@@ -20,6 +22,10 @@ PLANNED_AT = "2026-09-19T17:00:00+03:30"
 
 def parsed(text: str) -> datetime:
     return datetime.fromisoformat(text.replace("Z", "+00:00"))
+
+
+def make_event(title: str, planned_at: datetime, status: str = "DRAFT") -> Event:
+    return Event(title=title, type="class", planned_at=planned_at, status=status)
 
 
 def test_create_minimal_event(client: TestClient, session: Session) -> None:
@@ -144,3 +150,100 @@ def test_create_event_ignores_assignment_and_report_fields(
     assert response.status_code == 201
     assert session.scalars(select(EventAssignment)).all() == []
     assert session.scalars(select(Event)).one().report is None
+
+
+# --- GET /api/events — the calendar-oriented read (docs/06 §4c) ---
+
+
+def test_events_returns_empty_list_when_table_empty(client: TestClient) -> None:
+    response = client.get("/api/events")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_events_shape_exposes_contract_fields(
+    client: TestClient, session: Session
+) -> None:
+    session.add(make_event("Weekly Introduction", parsed(PLANNED_AT)))
+    session.commit()
+
+    response = client.get("/api/events")
+
+    assert response.status_code == 200
+    (event,) = response.json()
+    # Exactly the five business fields (docs/06 §4c) — no audit columns,
+    # no assignments/report relations.
+    assert set(event) == {"id", "title", "type", "planned_at", "status"}
+    assert event["title"] == "Weekly Introduction"
+    assert event["type"] == "class"
+    assert event["status"] == "DRAFT"
+    # Wall-clock equality: SQLite drops the offset on read-back (no
+    # timestamptz); the instant round-trip is a PostgreSQL guarantee,
+    # verified by the live check.
+    assert parsed(event["planned_at"]).replace(tzinfo=None) == parsed(
+        PLANNED_AT
+    ).replace(tzinfo=None)
+
+
+def test_events_ordered_by_planned_at_then_id(
+    client: TestClient, session: Session
+) -> None:
+    # Same offset throughout so ordering is unambiguous even where SQLite
+    # compares stored values lexically; PostgreSQL orders by true instant.
+    first = make_event("First", parsed("2026-09-05T17:00:00+03:30"))
+    second = make_event("Second", parsed("2026-09-12T17:00:00+03:30"))
+    third = make_event("Third", parsed("2026-09-19T17:00:00+03:30"))
+    session.add_all([third, first, second])  # out of order on purpose
+    session.commit()
+
+    response = client.get("/api/events")
+
+    assert response.status_code == 200
+    assert [event["title"] for event in response.json()] == [
+        "First",
+        "Second",
+        "Third",
+    ]
+
+
+def test_events_order_ties_break_deterministically_by_id(
+    client: TestClient, session: Session
+) -> None:
+    same_instant = parsed(PLANNED_AT)
+    session.add_all(
+        [make_event("A", same_instant), make_event("B", same_instant)]
+    )
+    session.commit()
+
+    response = client.get("/api/events")
+
+    assert response.status_code == 200
+    returned_ids = [event["id"] for event in response.json()]
+    expected = sorted(
+        session.scalars(select(Event)).all(), key=lambda e: (e.planned_at, e.id)
+    )
+    assert returned_ids == [str(event.id) for event in expected]
+
+
+def test_events_surface_status_as_stored(
+    client: TestClient, session: Session
+) -> None:
+    # Events other than DRAFT cannot exist via the API yet (creation is
+    # always DRAFT; transitions are TBD-D7/D23) — rows written directly
+    # exercise the read: status is surfaced as stored, not interpreted.
+    session.add_all(
+        [
+            make_event("Planned", parsed("2026-09-05T17:00:00+03:30"), "SCHEDULED"),
+            make_event("Off", parsed("2026-09-12T17:00:00+03:30"), "CANCELLED"),
+        ]
+    )
+    session.commit()
+
+    response = client.get("/api/events")
+
+    assert response.status_code == 200
+    assert [event["status"] for event in response.json()] == [
+        "SCHEDULED",
+        "CANCELLED",
+    ]
