@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints, two write endpoints (person and event creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
+**Document status:** Implementation artifact — read endpoints (roles, persons, events), two write endpoints (person and event creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
 **Last reviewed:** 2026-09-09
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -34,7 +34,7 @@ response model (same API schema) → JSON
 apps/api/app/
 ├── api/
 │   ├── __init__.py
-│   ├── events.py       # events router (POST — creation)
+│   ├── events.py       # events router (GET list, POST create)
 │   ├── persons.py      # persons router
 │   └── roles.py        # one router module per resource
 ├── schemas/
@@ -72,7 +72,8 @@ apps/api/app/
    raise domain-meaningful exceptions, and the router translates those
    into HTTP responses.
 5. **Deterministic ordering** on list endpoints (roles by `code`, persons by
-   `name` then `id`, a person's nested roles by `code`) — stable responses
+   `name` then `id`, events by `planned_at` then `id` — the calendar read —
+   a person's nested roles by `code`) — stable responses
    make testing and diffing reliable.
 6. **No business rules are invented here.** If a route needs a rule that is
    TBD (docs/00 §7), the route waits; the API follows the domain decisions,
@@ -90,6 +91,7 @@ apps/api/app/
 | GET | `/api/roles` | List the permanent organizational roles (reference data, seeded by migration `0002`) | Read-only; ordered by `code`; returns `[{id, code, name}]` |
 | GET | `/api/persons` | List branch members with their permanent roles (D-001) | Read-only; ordered by `name`, then `id`; returns `[{id, name, phone, active, roles: [{id, code, name}]}]` |
 | POST | `/api/persons` | Create a branch member, optionally with roles (§4a) | First write endpoint; `201 Created` with the `PersonRead` shape; person + memberships written atomically |
+| GET | `/api/events` | List events — the calendar-oriented read | Ordered by `planned_at`, then `id`; returns `EventRead` items `{id, title, type, planned_at, status}`; `planned_at` is a timezone-aware instant |
 | POST | `/api/events` | Create an event, always in `DRAFT` (§4c) | `201 Created` with the `EventRead` shape `{id, title, type, planned_at, status}`; timezone-aware `planned_at` required |
 
 Roles are **read-only by design**: the six rows are migration-owned reference
@@ -103,8 +105,9 @@ without interpreting them — name structure is TBD-D1, phone uniqueness
 TBD-D2, inactive semantics TBD-D3. Other person operations (update,
 deactivate, delete) and the events/assignments APIs arrive with their own
 tasks and must not invent answers to those open questions. Events support
-creation (§4c, implemented — always `DRAFT`); their read/calendar endpoints
-arrive with their own tasks.
+listing (calendar-oriented read) and creation (§4c, implemented — always
+`DRAFT`); filters, single-event reads, and status transitions arrive with
+their own tasks.
 
 ## 4a. Person Creation Contract (implemented)
 
@@ -264,8 +267,8 @@ report field (a report is a post-event record, **D-003**).
 `201 Created` with the created event in the events read shape — exactly
 the five business fields, audit columns not exposed (§3 rule 2):
 `{id, title, type, planned_at, status}`. `EventRead`
-(`app/schemas/event.py`) is that shape, defined with this endpoint; the
-future `GET /api/events` reuses it, so read and write cannot diverge.
+(`app/schemas/event.py`) is that shape, defined with the creation
+endpoint and reused by `GET /api/events` — read and write cannot diverge.
 
 ### Transactional expectation
 
@@ -321,7 +324,7 @@ python -m pytest                 # all tests, including API tests (SQLite)
 python -m app.db.check           # real database connectivity
 uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
                                  #       POST /api/persons, GET /api/persons,
-                                 #       POST /api/events
+                                 #       POST /api/events, GET /api/events
 ```
 
 ## 7. Out of Scope (unchanged TBDs)
@@ -329,9 +332,9 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
 - **Authentication/authorization** — TBD-A13/A11; no route requires identity
   yet. When auth lands, it will be enforced inside this layer (docs/01 §4).
 - Write endpoints: person creation (§4a) and event creation (§4c) are
-  implemented; assignments, reports, remaining person operations (update,
-  deactivate, delete), and event reads/transitions arrive with their own
-  tasks. Roles stay read-only by
+  implemented, plus event listing; assignments, reports, remaining person
+  operations (update, deactivate, delete), and event status transitions
+  arrive with their own tasks. Roles stay read-only by
   design (§4). Pagination conventions remain open (docs/01 §4 TBD T4);
   the error format is **defined** (§4b) and the reserved 404/409 resource
   rows activate with their first endpoints.
