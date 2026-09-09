@@ -185,6 +185,16 @@ unresolved (A6) → **TBD-A6**. An approval state may exist on EventAssignment
 responsibility on one event presumably goes to one person, but exclusivity
 rules (e.g., can two people share "registration"?) are **TBD-D11**.
 
+**Creation (contract for the future write path):** "Assign Person" is the
+second step of the approved MVP workflow (§8), so the creation need is
+confirmed. The API-level creation contract (request/response shape,
+reference identification, validation boundaries, error transport) is
+defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4d for the future
+`POST /api/event-assignments` — **not implemented yet**; it is blocked on
+the responsibility taxonomy (**TBD-D9**: `event_responsibilities` is
+deliberately unseeded, docs/05 §5a) and carries the other open assignment
+semantics (D8, D10/A6, D11, D3, D29, D30) as explicit TBDs.
+
 ### 2.4 Task
 
 An operational task.
@@ -403,6 +413,8 @@ resolved by an approved decision (§1.1).
 | TBD-D26 | Event `type` acceptance at creation: is any non-empty string stored until the taxonomy (**TBD-D5**) resolves, or does the API validate against a maintained list first? | open (new — surfaced by the Event creation contract, docs/06 §4c) |
 | TBD-D27 | May an Event be created with a past `planned_at`? | open (new — surfaced by the Event creation contract, docs/06 §4c; no evidence either way — nothing may hard-code an answer) |
 | TBD-D28 | Initial event status at creation: always `DRAFT`, or may the caller create directly in another status? | open (new — surfaced by the Event creation contract, docs/06 §4c; tied to the transition matrix **TBD-D7** and its authorization **TBD-D23**) |
+| TBD-D29 | Event-status precondition for assignments: from which event statuses (D-002 set) may an EventAssignment be created (e.g., may a person be assigned to a `COMPLETED`/`CANCELLED` event)? | open (new — surfaced by the EventAssignment creation contract, docs/06 §4d; tied to the transition matrix **TBD-D7**; until resolved the contract accepts any existing event) |
+| TBD-D30 | May an EventAssignment reference an inactive `event_responsibilities` row (`active=false`, retire mechanism **TBD-S2**)? | open (new — surfaced by the EventAssignment creation contract, docs/06 §4d) |
 | ~~TBD-A1~~ | ~~Multi-role persons~~ | **resolved by D-001: multiple simultaneous roles allowed** |
 | TBD-A3/A4 | Availability semantics/usage | open |
 | TBD-A6 | Approval scope of assignments | open |
