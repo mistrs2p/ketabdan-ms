@@ -90,7 +90,64 @@ Persons are currently read-only too: listing is confirmed visibility need;
 creation/assignment flows arrive with their own tasks and must not invent
 answers to open questions (name structure TBD-D1, phone uniqueness TBD-D2,
 inactive semantics TBD-D3). `PersonRead` surfaces `active` and `phone`
-exactly as stored, without interpreting them.
+exactly as stored, without interpreting them. The Person **creation
+contract** for the future write endpoint is defined in §4a below.
+
+## 4a. Person Creation Contract (future endpoint)
+
+`POST /api/persons` is **not implemented yet** — this section defines the
+contract the future implementation must follow, so the first write endpoint
+starts from an agreed shape instead of improvising one. Nothing here adds a
+business rule beyond what docs/02 and docs/03 already establish; wherever a
+rule is not supported by project evidence it is listed as open, not guessed.
+
+### Request (conceptual)
+
+| Field | Required | Type | Notes |
+| --- | --- | --- | --- |
+| `name` | yes | string | Confirmed concept; single free-text field (docs/03 §5.1). Structure, normalization, and maximum length are **TBD-D1** — no rules invented until resolved. |
+| `phone` | no | string or null | Optional (nullable). Duplicate phone numbers are currently allowed; uniqueness is **TBD-D2**. No format/normalization rules are defined yet. |
+| `active` | no | boolean | Defaults to `true` at creation (docs/03 §5.1). The contract carries the flag as stored; the meaning of inactive is **TBD-D3** and is not interpreted here. |
+| `roles` | no | list of role **codes** | e.g. `["supporter", "learner"]`. Multiple entries allowed (**D-001**). Zero entries permitted — whether the business *requires* at least one role is **TBD-D24**. |
+
+**API design choice (technical, not a domain rule):** role input identifies
+roles by `code` — the documented *stable machine key* of the seeded
+reference data (docs/03 §5.2, migration `0002`) — not by UUID. Responses
+continue to return both `id` and `code`, exactly as `GET /api/persons` does
+today.
+
+### Response (conceptual)
+
+`201 Created` with the created person in the `PersonRead` shape already
+served by `GET /api/persons`: `{id, name, phone, active, roles}`.
+
+### Transactional expectation
+
+If roles are supplied, the person row and its `person_roles` memberships are
+written in the **same transaction**: the request either creates the person
+with all of its roles, or creates nothing (docs/01 §3.2 — consistency and
+transactional integrity). This is a technical guarantee, not a business rule.
+
+### Validation boundaries
+
+Already known (guaranteed by the approved schema, docs/03 §5.1/§5.3):
+
+- `name` must be present (`NOT NULL`).
+- `phone`, when present, is free text — no format constraint exists.
+- every supplied role code must reference an existing seeded role
+  (FK `person_roles.role_id` → `roles.id`, `ON DELETE RESTRICT`).
+
+Explicitly unresolved (error-policy questions — decided with the general API
+error policy, docs/01 TBD T5; no runtime behavior may hard-code an answer):
+
+- HTTP error body shape for validation failures.
+- Status code for an unknown role code (422 vs 404).
+- Name emptiness/whitespace/length rules (**TBD-D1**).
+- Phone format, normalization, and duplicate handling (**TBD-D2**).
+- Whether a duplicate role code within the input list is deduplicated or
+  rejected — an input-validation detail, not a domain rule.
+- Whether a person may be created directly as inactive (`active: false` in
+  the request) or only deactivated later — tied to **TBD-D3**.
 
 ## 5. Tests
 
@@ -117,6 +174,7 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles
 - **Authentication/authorization** — TBD-A13/A11; no route requires identity
   yet. When auth lands, it will be enforced inside this layer (docs/01 §4).
 - Write endpoints of any kind (roles are read-only by design, §4; person
-  creation/update and events/assignments APIs arrive with their own tasks),
-  pagination and error-format conventions (docs/01 §4 TBDs T4/T5).
+  creation is contract-only for now — §4a — and its implementation, along
+  with events/assignments APIs, arrives with its own task), pagination and
+  error-format conventions (docs/01 §4 TBDs T4/T5).
 - OpenAPI → TypeScript type generation for the frontend (TBD T3).
