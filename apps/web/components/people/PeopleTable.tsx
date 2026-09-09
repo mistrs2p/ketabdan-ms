@@ -1,12 +1,13 @@
 import { getTranslations } from "next-intl/server";
+import { Link } from "@/i18n/routing";
 import type { PersonRead } from "@/lib/api";
 
 // People table. Desktop (≥ md): a semantic table. Below md: the same
 // data as stacked cards — a wide table squeezed onto a phone would
 // break. Role labels come from the role row's `name` (backend
 // reference data) — never hard-coded. Status is shown as text
-// (not color-only). The action is a disabled placeholder for a
-// later detail task, labeled as such for accessibility.
+// (not color-only). The View action links to the person detail page
+// via the localized routing helper.
 export async function PeopleTable({ people }: { people: PersonRead[] }) {
   const t = await getTranslations("people");
 
@@ -52,7 +53,11 @@ export async function PeopleTable({ people }: { people: PersonRead[] }) {
                 />
               </td>
               <td className="px-4 py-3">
-                <ViewAction label={t("viewAction")} hint={t("viewDisabledHint")} />
+                <ViewAction
+                  personId={person.id}
+                  personName={person.name}
+                  label={t("viewAction")}
+                />
               </td>
             </tr>
           ))}
@@ -94,7 +99,11 @@ export async function PeopleTable({ people }: { people: PersonRead[] }) {
               </dd>
             </dl>
             <div>
-              <ViewAction label={t("viewAction")} hint={t("viewDisabledHint")} />
+              <ViewAction
+                personId={person.id}
+                personName={person.name}
+                label={t("viewAction")}
+              />
             </div>
           </li>
         ))}
@@ -156,16 +165,22 @@ function StatusCell({
   );
 }
 
-function ViewAction({ label, hint }: { label: string; hint: string }) {
+function ViewAction({
+  personId,
+  personName,
+  label,
+}: {
+  personId: string;
+  personName: string;
+  label: string;
+}) {
   return (
-    <button
-      type="button"
-      disabled
-      title={hint}
-      aria-label={`${label} — ${hint}`}
-      className="cursor-not-allowed rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground"
+    <Link
+      href={`/people/${personId}`}
+      aria-label={`${label}: ${personName}`}
+      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/5"
     >
       {label}
-    </button>
+    </Link>
   );
 }
