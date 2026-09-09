@@ -132,5 +132,77 @@
         "back": "Back to {page}"
       }
     }
+  },
+  "events": {
+    "description": "Branch events and gatherings.",
+    "addEvent": "Add event",
+    "table": {
+      "caption": "Branch events",
+      "title": "Title",
+      "type": "Type",
+      "plannedAt": "Planned at",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "status": {
+      "DRAFT": "Draft",
+      "SCHEDULED": "Scheduled",
+      "IN_PROGRESS": "In progress",
+      "COMPLETED": "Completed",
+      "CANCELLED": "Cancelled"
+    },
+    "viewAction": "View",
+    "loading": "Loading events…",
+    "error": {
+      "title": "Could not load events",
+      "network": "The events list is unavailable right now. Check that the backend service is running and try again.",
+      "server": "The events list is unavailable right now. Try again in a moment."
+    },
+    "empty": {
+      "title": "No events have been added yet",
+      "description": "Branch events appear here once they are added."
+    },
+    "create": {
+      "title": "Add event",
+      "description": "Create a new branch event.",
+      "titleLabel": "Title",
+      "typeLabel": "Type",
+      "typeHint": "Free text, e.g. introduction, film analysis, gathering.",
+      "plannedAtLabel": "Planned at",
+      "plannedAtHint": "Date and time. The event is created as a draft.",
+      "submit": "Create event",
+      "submitting": "Creating…",
+      "cancel": "Cancel",
+      "cancelBackTo": "Cancel and return to {page}",
+      "validation": {
+        "titleRequired": "Title is required.",
+        "typeRequired": "Type is required.",
+        "plannedAtRequired": "Planned date and time are required.",
+        "plannedAtInvalid": "The planned date and time are invalid."
+      },
+      "error": {
+        "network": "The event could not be created. Check that the backend service is running and try again.",
+        "server": "The event could not be created. Try again in a moment.",
+        "validation": "The event could not be created. Check the entered values and try again."
+      }
+    },
+    "detail": {
+      "description": "Details of a branch event.",
+      "title": "Title",
+      "type": "Type",
+      "plannedAt": "Planned at",
+      "status": "Status",
+      "back": "Back to {page}",
+      "error": {
+        "title": "Could not load this event",
+        "server": "This event is unavailable right now. Try again in a moment.",
+        "back": "Back to events"
+      },
+      "notFound": {
+        "title": "Event not found",
+        "description": "This event does not exist or is no longer available.",
+        "back": "Back to {page}"
+      }
+    }
   }
 }
