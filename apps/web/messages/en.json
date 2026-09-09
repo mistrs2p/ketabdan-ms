@@ -1,0 +1,17 @@
+{
+  "foundation": {
+    "title": "Ketabdaneh",
+    "subtitle": "Branch operations management system",
+    "statusText": "UI foundation is ready",
+    "card": {
+      "title": "Sample card",
+      "body": "This is a demo card for verifying localization and theming."
+    },
+    "button": "Sample button",
+    "themeToggle": {
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "language": "Language"
+  }
+}
