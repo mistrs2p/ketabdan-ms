@@ -78,8 +78,9 @@ uvicorn app.main:app --reload --port 8000
 The API is now available at http://localhost:8000 — health check:
 `GET /api/health` → `{"status": "ok"}`; business endpoints: `GET /api/roles`
 (the seeded reference roles), `GET /api/persons` (branch members with their
-roles), and `POST /api/persons` (create a branch member, optionally with
-roles — the first write endpoint). Interactive docs (Swagger UI) at
+roles), `POST /api/persons` (create a branch member, optionally with
+roles), and `POST /api/events` (create an event — always `DRAFT`, with a
+timezone-aware planned time). Interactive docs (Swagger UI) at
 http://localhost:8000/docs.
 
 Configuration is environment-based (see `apps/api/.env.example`): set
@@ -112,16 +113,17 @@ The web app is now available at http://localhost:3000.
 
 ## Current Project Status
 
-**First write endpoint stage.** The repository contains the runnable
+**Event creation stage.** The repository contains the runnable
 application skeletons, local development infrastructure, the approved domain
 model and database schema design
 ([docs/02](docs/02-DOMAIN-MODEL.md), [docs/03](docs/03-DATABASE-SCHEMA.md)),
 the SQLAlchemy ORM persistence foundation
 ([docs/04](docs/04-BACKEND-PERSISTENCE.md)), Alembic migrations with the six
 confirmed roles seeded ([docs/05](docs/05-DATABASE-MIGRATIONS.md)), and the
-first business endpoints — `GET /api/roles`, `GET /api/persons`, and
-`POST /api/persons` (person creation with atomic role memberships,
-[docs/06](docs/06-BACKEND-API.md) §4a). The remaining business APIs and UI
+first business endpoints — `GET /api/roles`, `GET /api/persons`,
+`POST /api/persons`, and `POST /api/events` (event creation, always
+`DRAFT`) — plus the API error policy
+([docs/06](docs/06-BACKEND-API.md)). The remaining business APIs and UI
 features follow as the open domain questions
 ([docs/00](docs/00-PROJECT-CONTEXT.md) §7) are resolved.
 
