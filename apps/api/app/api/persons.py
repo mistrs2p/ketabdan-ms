@@ -47,9 +47,9 @@ def create_person(
     try:
         return persons_service.create_person(db, payload)
     except persons_service.UnknownRoleError as exc:
-        # 422 (FastAPI's own validation status) chosen for now: the request
-        # payload references role codes that do not exist. The formal error
-        # policy is still open (docs/01 TBD T5) and may revisit this.
+        # 422 per the error policy (docs/06 §4b rule 3): request content
+        # that violates domain reference data shares the validation
+        # status family.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),

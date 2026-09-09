@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints plus the first write endpoint (person creation) established; the API surface is intentionally minimal and grows task by task.
+**Document status:** Implementation artifact — read endpoints, the first write endpoint (person creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
 **Last reviewed:** 2026-09-09
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -140,11 +140,12 @@ Guaranteed by the approved schema (docs/03 §5.1/§5.3):
   (FK `person_roles.role_id` → `roles.id`, `ON DELETE RESTRICT`).
 
 Implementation choices made for this endpoint (technical/API details, not
-domain rules; revisit if the general error policy decides otherwise):
+domain rules; the status code and body shape are now fixed by the general
+error policy, §4b):
 
 - An unknown role code → **422** with the unknown code(s) named in
-  `detail` (FastAPI's own validation status; the 422-vs-404 question is
-  folded into **TBD T5**).
+  `detail` (§4b: request content that violates domain reference data
+  shares the validation status family).
 - Duplicate role codes within the input list are **collapsed** — a person
   holds a *set* of roles (D-001), so `["supporter", "supporter"]` creates
   one membership.
@@ -152,21 +153,86 @@ domain rules; revisit if the general error policy decides otherwise):
   as inactive is technically permitted; what inactive *means* stays
   **TBD-D3**.
 
-Explicitly unresolved (decided with the general API error policy,
-docs/01 TBD T5; no runtime behavior may hard-code an answer):
+Explicitly unresolved (business/domain questions — no runtime behavior may
+hard-code an answer):
 
-- HTTP error body shape for validation failures (currently FastAPI's
-  default `{detail: ...}` everywhere).
 - Name emptiness/whitespace/length rules (**TBD-D1**).
 - Phone format, normalization, and duplicate handling (**TBD-D2**).
 - Whether the business *requires* at least one role at creation
   (**TBD-D24**).
 
+The transport of these failures — status codes and body shape — is no
+longer open: it follows the general error policy (§4b).
+
+## 4b. Error Policy (MVP)
+
+This section defines how the API reports failures. It **resolves TBD T5**
+(docs/01 §7) for the MVP: the structured error response format is
+FastAPI's native shape, not a custom envelope. The policy was established
+by observing the actual runtime behavior first (§4b.1) — the framework
+defaults already give a consistent, OpenAPI-documented contract, and
+overriding them would add code for no current benefit.
+
+### 4b.1 Observed behavior (runtime evidence, 2026-09-09)
+
+No global exception handlers or middleware exist — every response below is
+FastAPI/starlette default behavior plus the one router-level translation
+in `POST /api/persons` (§4a):
+
+| Situation | Status | Body |
+| --- | --- | --- |
+| Missing/invalid request field, wrong type, malformed JSON | `422` | `{"detail": [ {type, loc, msg, input, ...} ]}` — Pydantic's structured error list |
+| Domain error: request content violates domain reference data (unknown role code) | `422` | `{"detail": "Unknown role code(s): ghost"}` — human-readable string |
+| Unknown path | `404` | `{"detail": "Not Found"}` |
+| HTTP method not supported by the path | `405` | `{"detail": "Method Not Allowed"}` |
+| Unexpected exception in a route/dependency | `500` | `Internal Server Error` — **plain text**, starlette's default (not JSON) |
+| Success | `200`/`201` | the resource, JSON |
+
+### 4b.2 Rules
+
+1. **No custom error envelope.** Every JSON error body is
+   `{"detail": ...}` — FastAPI's native shape, single consumer, and
+   already documented by OpenAPI (`/docs`). A wrapper format
+   (`{"error": {"code": ...}}`, RFC 9457 `application/problem+json`, …)
+   is deliberately **not** introduced for theoretical consistency.
+2. **Request validation errors keep the framework default.** Routers do
+   not catch or reformat Pydantic validation failures; `detail` remains
+   the structured list (§4b.1). Clients read `detail[*].loc`/`msg`.
+3. **Domain errors are translated at the router.** Services raise
+   domain-meaningful exceptions (e.g. `UnknownRoleError`,
+   `app/services/persons.py`) and stay HTTP-free; the router catches the
+   specific exception and raises `HTTPException` with the mapped status
+   and a human-readable `detail` string. Request content that passes type
+   validation but violates domain reference data → **422** — the same
+   status family as validation, because the payload (not the server
+   state) is at fault.
+4. **Status codes are policy, not per-endpoint improvisation.** Current
+   mapping: unknown path 404, method 405, validation/domain-content 422,
+   unexpected 500. **Reserved for future endpoints** (no endpoint
+   exercises them yet; add rows here when the first such endpoint lands):
+   not-found *resource* (e.g. a later `GET /api/persons/{id}`) → `404`;
+   state conflicts (e.g. an illegal event status transition, D-002 /
+   TBD-D7) → `409`.
+5. **No global handler for unexpected exceptions (deliberate).** The
+   starlette default 500 (plain text) is accepted for the MVP; no stack
+   traces or details leak to the client. Data safety does not depend on
+   it: the `get_db` dependency closes the session on error, so an
+   uncommitted transaction rolls back — no partial writes (docs/04 §4).
+   If the frontend later needs a JSON 500 body, add one
+   `@app.exception_handler(Exception)` returning
+   `{"detail": "Internal server error"}` — a small, contained change.
+6. **This policy fixes transport, not user-facing wording.** Which
+   message a user sees (and in which language, TBD-A14) is a presentation
+   concern of the frontend; the backend's `detail` strings are for
+   developers/API consumers and are not a UI copy source.
+
 ## 5. Tests
 
-The API test files (`tests/test_api_roles.py`, `tests/test_api_persons.py`)
-exercise the full HTTP stack — routing, dependency injection, response
-serialization — with FastAPI's `TestClient`. The shared `client` fixture
+The API test files (`tests/test_api_roles.py`, `tests/test_api_persons.py`,
+`tests/test_api_error_policy.py`) exercise the full HTTP stack — routing,
+dependency injection, response serialization — with FastAPI's `TestClient`.
+The error-policy tests lock the status codes and body shapes documented in
+§4b. The shared `client` fixture
 (conftest.py) overrides `get_db` with the in-memory SQLite session, which
 uses `StaticPool` + `check_same_thread=False` because TestClient runs the
 app in a worker thread. PostgreSQL behavior is verified by running the
@@ -190,6 +256,7 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
 - Write endpoints: person creation is implemented (§4a); events,
   assignments, reports, and remaining person operations (update,
   deactivate, delete) arrive with their own tasks. Roles stay read-only by
-  design (§4). Pagination and error-format conventions remain open
-  (docs/01 §4 TBDs T4/T5).
+  design (§4). Pagination conventions remain open (docs/01 §4 TBD T4);
+  the error format is **defined** (§4b) and the reserved 404/409 resource
+  rows activate with their first endpoints.
 - OpenAPI → TypeScript type generation for the frontend (TBD T3).
