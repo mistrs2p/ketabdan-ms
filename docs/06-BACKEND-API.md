@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads), three write endpoints (person, event, and event-assignment creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
+**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads, event assignments incl. single-assignment reads), three write endpoints (person, event, and event-assignment creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
 **Last reviewed:** 2026-09-09
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -99,6 +99,8 @@ apps/api/app/
 | GET | `/api/events` | List events — the calendar-oriented read | Ordered by `planned_at`, then `id`; returns `EventRead` items `{id, title, type, planned_at, status}`; `planned_at` is a timezone-aware instant |
 | GET | `/api/events/{event_id}` | Return one event by id | `EventRead`; unknown-but-valid UUID → `404 {"detail": "Event not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
 | POST | `/api/events` | Create an event, always in `DRAFT` (§4c) | `201 Created` with the `EventRead` shape `{id, title, type, planned_at, status}`; timezone-aware `planned_at` required |
+| GET | `/api/event-assignments` | List assignments — the stable baseline read | Ordered by `id`; returns `EventAssignmentRead` items (responsibility embedded, event/person referenced by id); no pagination/filter/search (deliberately) |
+| GET | `/api/event-assignments/{assignment_id}` | Return one assignment by id | `EventAssignmentRead`; unknown-but-valid UUID → `404 {"detail": "Event assignment not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
 | POST | `/api/event-assignments` | Create an assignment (§4d) | `201 Created` with the `EventAssignmentRead` shape `{id, event_id, person_id, responsibility: {id, code, name, active}, approval_status}` — always `PENDING`; unknown event/person UUID → 404, unknown responsibility code → 422 |
 
 Roles are **read-only by design**: the six rows are migration-owned reference
@@ -312,8 +314,10 @@ behavior may hard-code an answer):
 
 ## 4d. EventAssignment Creation Contract (implemented)
 
-`POST /api/event-assignments` is implemented per this contract (same
-approach as Person and Event creation, §4a/§4c: contract first — defined
+`POST /api/event-assignments` and its list/single reads
+(`GET /api/event-assignments`, `GET /api/event-assignments/{assignment_id}`)
+are implemented per this contract (same approach as Person and Event
+creation, §4a/§4c: contract first — defined
 in a documentation-only task and already reviewed — then implementation).
 It defines exactly what the endpoint accepts and returns, using
 only facts already established by docs/02, docs/03, and the implemented
@@ -432,6 +436,23 @@ shape (`app/schemas/event_assignment.py`):
   full representations are served by their own endpoints. Nesting the
   event (with its assignments) would recurse.
 
+### Reads (implemented)
+
+- **`GET /api/event-assignments`** — the list read: a plain JSON array of
+  `EventAssignmentRead` items (empty table → `[]`, never `{items: []}`),
+  ordered by `id` (deterministic ordering per §3 rule 5; no business sort
+  — by event, person, responsibility, or approval status — is documented
+  anywhere, so none is invented). No pagination, filtering, search, or
+  date-range parameters exist (deliberately; docs/01 §4 TBD T4).
+- **`GET /api/event-assignments/{assignment_id}`** — the single read by
+  UUID path parameter; unknown-but-valid UUID →
+  `404 {"detail": "Event assignment not found"}` (§4b rule 4), malformed
+  UUID → FastAPI's default 422.
+- Both reuse `EventAssignmentRead` exactly — no competing read schema —
+  and eagerly load only the `responsibility` relation (the one embedded
+  in the read shape, §3 rule 7); `event` and `person` are not eagerly
+  loaded because they are not embedded.
+
 ### Transactional expectation
 
 Creation writes exactly **one row** in `event_assignments` (no related
@@ -471,7 +492,8 @@ The API test files (`tests/test_api_roles.py`, `tests/test_api_persons.py`,
 full HTTP stack — routing, dependency injection, response serialization —
 with FastAPI's `TestClient`. The error-policy tests lock the status codes
 and body shapes documented in §4b; the assignment tests additionally lock
-the carried-not-interpreted TBDs (D3, D29, D30, D11) as current behavior.
+the carried-not-interpreted TBDs (D3, D29, D30, D11) as current behavior,
+and the list/single read shape and ordering.
 The shared `client` fixture
 (conftest.py) overrides `get_db` with the in-memory SQLite session, which
 uses `StaticPool` + `check_same_thread=False` because TestClient runs the
@@ -491,7 +513,9 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
                                  #       POST /api/persons, GET /api/persons,
                                  #       POST /api/events, GET /api/events,
                                  #       GET /api/events/{event_id},
-                                 #       POST /api/event-assignments
+                                 #       POST /api/event-assignments,
+                                 #       GET /api/event-assignments,
+                                 #       GET /api/event-assignments/{assignment_id}
 ```
 
 ## 7. Out of Scope (unchanged TBDs)
@@ -499,11 +523,15 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
 - **Authentication/authorization** — TBD-A13/A11; no route requires identity
   yet. When auth lands, it will be enforced inside this layer (docs/01 §4).
 - Write endpoints: person creation (§4a), event creation (§4c), and
-  event-assignment creation (§4d) are implemented. Assignment reads
-  (assignments of an event / of a person) and approval, reports, remaining
-  person operations (update, deactivate, delete), and event status
-  transitions arrive with their own tasks — each carrying its open TBDs
-  (D10/A6/S13 for approval, D19/A9 for reports). Roles stay read-only by
+  event-assignment creation plus its list/single reads (§4d) are
+  implemented. **Not implemented** (deliberately): assignment
+  update/delete, approval/rejection (approval semantics are TBD-D10/A6/S13
+  — the provisional `approval_status` is carried, never transitioned),
+  assignment filtering (e.g. assignments *of* an event / *of* a person —
+  a filtered read pattern for the calendar/event views, arrives with its
+  own task), reports (D19/A9), remaining person operations (update,
+  deactivate, delete), and event status transitions (D7/D23) — each
+  carrying its open TBDs. Roles stay read-only by
   design (§4). Pagination conventions remain open (docs/01 §4 TBD T4);
   the error format is **defined** (§4b) and the reserved 409 row activates
   with its first endpoint.
