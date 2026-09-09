@@ -247,3 +247,51 @@ def test_events_surface_status_as_stored(
         "SCHEDULED",
         "CANCELLED",
     ]
+
+
+# --- GET /api/events/{event_id} — the single-resource read ---
+
+
+def test_get_event_returns_the_event_with_contract_fields(
+    client: TestClient, session: Session
+) -> None:
+    event = make_event("Weekly Introduction", parsed(PLANNED_AT))
+    session.add(event)
+    session.commit()
+
+    response = client.get(f"/api/events/{event.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    # Same five business fields as the list — no audit columns, no
+    # assignments/report relations.
+    assert set(body) == {"id", "title", "type", "planned_at", "status"}
+    assert body["id"] == str(event.id)
+    assert body["title"] == "Weekly Introduction"
+    assert body["type"] == "class"
+    assert body["status"] == "DRAFT"
+
+
+def test_get_event_with_unknown_id_is_404(client: TestClient) -> None:
+    # §4b rule 4: a well-formed UUID that matches no event → 404 with the
+    # FastAPI-native error body.
+    unknown = "11111111-1111-4111-8111-111111111111"
+
+    response = client.get(f"/api/events/{unknown}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Event not found"}
+
+
+def test_get_event_with_malformed_id_is_default_validation_422(
+    client: TestClient,
+) -> None:
+    # Malformed UUIDs take FastAPI's standard path-parameter validation —
+    # no custom handling (§4b rule 2): 422 with the structured detail list.
+    response = client.get("/api/events/not-a-uuid")
+
+    assert response.status_code == 422
+    assert isinstance(response.json()["detail"], list)
+    (item,) = response.json()["detail"]
+    assert item["type"] == "uuid_parsing"
+    assert item["loc"] == ["path", "event_id"]
