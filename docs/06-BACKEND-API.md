@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints (roles, persons, events), two write endpoints (person and event creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
+**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads), two write endpoints (person and event creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
 **Last reviewed:** 2026-09-09
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -92,6 +92,7 @@ apps/api/app/
 | GET | `/api/persons` | List branch members with their permanent roles (D-001) | Read-only; ordered by `name`, then `id`; returns `[{id, name, phone, active, roles: [{id, code, name}]}]` |
 | POST | `/api/persons` | Create a branch member, optionally with roles (§4a) | First write endpoint; `201 Created` with the `PersonRead` shape; person + memberships written atomically |
 | GET | `/api/events` | List events — the calendar-oriented read | Ordered by `planned_at`, then `id`; returns `EventRead` items `{id, title, type, planned_at, status}`; `planned_at` is a timezone-aware instant |
+| GET | `/api/events/{event_id}` | Return one event by id | `EventRead`; unknown-but-valid UUID → `404 {"detail": "Event not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
 | POST | `/api/events` | Create an event, always in `DRAFT` (§4c) | `201 Created` with the `EventRead` shape `{id, title, type, planned_at, status}`; timezone-aware `planned_at` required |
 
 Roles are **read-only by design**: the six rows are migration-owned reference
@@ -105,9 +106,9 @@ without interpreting them — name structure is TBD-D1, phone uniqueness
 TBD-D2, inactive semantics TBD-D3. Other person operations (update,
 deactivate, delete) and the events/assignments APIs arrive with their own
 tasks and must not invent answers to those open questions. Events support
-listing (calendar-oriented read) and creation (§4c, implemented — always
-`DRAFT`); filters, single-event reads, and status transitions arrive with
-their own tasks.
+listing (calendar-oriented read), single-event reads by id, and creation
+(§4c, implemented — always `DRAFT`); filters and status transitions arrive
+with their own tasks.
 
 ## 4a. Person Creation Contract (implemented)
 
@@ -216,12 +217,12 @@ in `POST /api/persons` (§4a):
    status family as validation, because the payload (not the server
    state) is at fault.
 4. **Status codes are policy, not per-endpoint improvisation.** Current
-   mapping: unknown path 404, method 405, validation/domain-content 422,
-   unexpected 500. **Reserved for future endpoints** (no endpoint
-   exercises them yet; add rows here when the first such endpoint lands):
-   not-found *resource* (e.g. a later `GET /api/persons/{id}`) → `404`;
-   state conflicts (e.g. an illegal event status transition, D-002 /
-   TBD-D7) → `409`.
+   mapping: unknown path 404, not-found *resource* 404 (`GET
+   /api/events/{event_id}` → `{"detail": "Event not found"}`), method
+   405, validation/domain-content 422, unexpected 500. **Reserved for
+   future endpoints** (no endpoint exercises them yet; add rows here when
+   the first such endpoint lands): state conflicts (e.g. an illegal event
+   status transition, D-002 / TBD-D7) → `409`.
 5. **No global handler for unexpected exceptions (deliberate).** The
    starlette default 500 (plain text) is accepted for the MVP; no stack
    traces or details leak to the client. Data safety does not depend on
@@ -324,7 +325,8 @@ python -m pytest                 # all tests, including API tests (SQLite)
 python -m app.db.check           # real database connectivity
 uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
                                  #       POST /api/persons, GET /api/persons,
-                                 #       POST /api/events, GET /api/events
+                                 #       POST /api/events, GET /api/events,
+                                 #       GET /api/events/{event_id}
 ```
 
 ## 7. Out of Scope (unchanged TBDs)

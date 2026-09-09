@@ -80,8 +80,9 @@ The API is now available at http://localhost:8000 — health check:
 (the seeded reference roles), `GET /api/persons` (branch members with their
 roles), `POST /api/persons` (create a branch member, optionally with
 roles), `GET /api/events` (list events ordered by planned time — the
-calendar read), and `POST /api/events` (create an event — always `DRAFT`,
-with a timezone-aware planned time). Interactive docs (Swagger UI) at
+calendar read), `GET /api/events/{event_id}` (one event; unknown id →
+404), and `POST /api/events` (create an event — always `DRAFT`, with a
+timezone-aware planned time). Interactive docs (Swagger UI) at
 http://localhost:8000/docs.
 
 Configuration is environment-based (see `apps/api/.env.example`): set
@@ -122,7 +123,8 @@ the SQLAlchemy ORM persistence foundation
 ([docs/04](docs/04-BACKEND-PERSISTENCE.md)), Alembic migrations with the six
 confirmed roles seeded ([docs/05](docs/05-DATABASE-MIGRATIONS.md)), and the
 first business endpoints — `GET /api/roles`, `GET /api/persons`,
-`POST /api/persons`, `GET /api/events` (calendar-oriented list), and
+`POST /api/persons`, `GET /api/events` (calendar-oriented list),
+`GET /api/events/{event_id}` (single event), and
 `POST /api/events` (event creation, always `DRAFT`) — plus the API error
 policy ([docs/06](docs/06-BACKEND-API.md)). The remaining business APIs and
 UI features follow as the open domain questions

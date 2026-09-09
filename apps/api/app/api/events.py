@@ -3,12 +3,14 @@
 Reads are direct queries (docs/06 §3 rule 4); creation delegates to
 ``app.services.events`` because it carries the always-DRAFT invariant.
 `EventRead` is the single events read shape, fixed by the creation
-contract — listing reuses it, so the two endpoints cannot diverge.
+contract — listing and single-event reads reuse it, so the endpoints
+cannot diverge.
 """
 
 from collections.abc import Sequence
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -28,6 +30,22 @@ router = APIRouter(prefix="/api", tags=["events"])
 def list_events(db: Session = Depends(get_db)) -> Sequence[Event]:
     """List events ordered by planned time, then id — the calendar read."""
     return db.scalars(select(Event).order_by(Event.planned_at, Event.id)).all()
+
+
+@router.get(
+    "/events/{event_id}",
+    response_model=EventRead,
+    status_code=status.HTTP_200_OK,
+)
+def get_event(event_id: UUID, db: Session = Depends(get_db)) -> Event:
+    """Return one event by id (§4b rule 4: not-found resource → 404)."""
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found",
+        )
+    return event
 
 
 @router.post(
