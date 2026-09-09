@@ -57,8 +57,10 @@ docker compose up -d        # starts PostgreSQL with persistent storage
 docker compose down
 ```
 
-PostgreSQL listens on the port configured in `.env`
-(`POSTGRES_PORT`, default `5432`). Data persists in the `postgres_data` volume.
+PostgreSQL listens on the host port configured in `.env`
+(`POSTGRES_PORT`, default `5433` — 5432 is avoided because a native
+PostgreSQL service on this machine may already occupy it). Data persists in
+the `postgres_data` volume.
 
 ### Backend (FastAPI)
 
@@ -67,6 +69,7 @@ cd apps/api
 python -m venv .venv
 . .venv/bin/activate         # Windows (PowerShell): .venv\Scripts\Activate.ps1
 pip install -e .
+pip install "pytest>=8.0"    # dev/test dependencies
 
 uvicorn app.main:app --reload --port 8000
 ```
@@ -74,6 +77,15 @@ uvicorn app.main:app --reload --port 8000
 The API is now available at http://localhost:8000 — health check:
 `GET /api/health` → `{"status": "ok"}`.
 Interactive docs (Swagger UI) at http://localhost:8000/docs.
+
+Configuration is environment-based (see `apps/api/.env.example`): set
+`DATABASE_URL` to point at PostgreSQL. The API starts without it — only
+database-dependent features require it.
+
+Persistence foundation (SQLAlchemy 2.x ORM models for the approved MVP
+schema, database session management, tests): see
+[docs/04-BACKEND-PERSISTENCE.md](docs/04-BACKEND-PERSISTENCE.md). Run the
+test suite with `python -m pytest tests` from `apps/api`.
 
 ### Frontend (Next.js)
 
@@ -87,12 +99,14 @@ The web app is now available at http://localhost:3000.
 
 ## Current Project Status
 
-**Bootstrap stage.** The repository contains only the runnable application
-skeletons and local development infrastructure described above. No business
-features have been implemented — no events, tasks, assignments, calendar,
-authentication, or database schema. Those will be built after the open domain
-questions listed in [docs/00-PROJECT-CONTEXT.md](docs/00-PROJECT-CONTEXT.md)
-(§7) are resolved.
+**Persistence foundation stage.** The repository contains the runnable
+application skeletons, local development infrastructure, the approved
+domain model and database schema design
+([docs/02](docs/02-DOMAIN-MODEL.md), [docs/03](docs/03-DATABASE-SCHEMA.md)),
+and the SQLAlchemy ORM persistence foundation
+([docs/04](docs/04-BACKEND-PERSISTENCE.md)). No business APIs, migrations,
+or UI features are implemented yet — those follow after the remaining open
+domain questions ([docs/00](docs/00-PROJECT-CONTEXT.md) §7) are resolved.
 
 ## Conventions
 

@@ -11,7 +11,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ketabdaneh_dev}
       POSTGRES_DB: ${POSTGRES_DB:-ketabdaneh}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Host port 5433 by default: a native Windows PostgreSQL service may
+      # already occupy host port 5432 on this machine, which silently
+      # hijacks `localhost:5432` connections meant for this container.
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       # postgres:18+ recommended mount point (data lands in a subdirectory,
       # see docker-library/postgres#37)
