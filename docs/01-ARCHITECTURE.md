@@ -143,7 +143,7 @@ The single communication channel between the two applications:
 | Protocol | HTTP(S) with JSON request/response bodies |
 | Style | Resource-oriented REST API |
 | Entry point | One FastAPI service; the frontend has no other backend to call |
-| Errors | Non-2xx responses with structured error payloads (exact error format **TBD**) |
+| Errors | Non-2xx responses; JSON error body `{"detail": ...}` (FastAPI-native) — MVP error policy defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4b |
 | Real-time | None in MVP — updates are visible on page load/refresh or explicit refetch. A push channel (SSE/WebSocket) is **TBD / out of MVP** |
 
 Rules of the boundary:
@@ -155,8 +155,9 @@ Rules of the boundary:
    versioning scheme is **TBD** (§7).
 3. All authorization happens **inside the boundary** — the backend never trusts
    role/identity claims coming only from the client.
-4. Pagination/filtering conventions, error body shape, and endpoint definitions
-   are **TBD — deliberately not defined in this document** (per task rules).
+4. Pagination/filtering conventions and endpoint definitions are
+   **TBD — deliberately not defined in this document** (per task rules);
+   the error body shape **is** defined (docs/06 §4b).
 
 ## 5. Environments & Configuration (high level)
 
@@ -191,7 +192,7 @@ Telegram and Bale integrations are **future possibilities only**:
 | T2 | Authentication & session mechanism | Domain TBD A13 |
 | T3 | OpenAPI → TypeScript type generation for the frontend | Useful but optional; decide when the API stabilizes |
 | T4 | Formal API versioning scheme | Single consumer in MVP; revisit if external consumers (Telegram/Bale adapters) appear |
-| T5 | Structured error response format | Needed before API design; belongs to the API design document |
+| T5 | ~~Structured error response format~~ **[RESOLVED — MVP]**: FastAPI-native `{"detail": ...}` body plus a status-code mapping (422 validation/domain-content, 404 unknown path, 405 method, 500 unexpected; 404-resource/409 reserved) — defined and locked in [06-BACKEND-API.md](06-BACKEND-API.md) §4b. Revisit only if a real consumer requirement appears (e.g. Telegram/Bale adapters). | Needed before API design; belongs to the API design document |
 | T6 | Real-time updates (SSE/WebSocket) for calendar/task status | Not MVP; depends on clarified exception/notification requirements (A7) |
 | T7 | Staging environment (yes/no) | Operational decision; revisit near deployment |
 | T8 | Migration tooling (e.g., Alembic vs other) | Needed before first schema; tooling choice not yet made |
