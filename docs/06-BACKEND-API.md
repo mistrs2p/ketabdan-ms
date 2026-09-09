@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads, event assignments incl. single-assignment reads), three write endpoints (person, event, and event-assignment creation), and the MVP error policy (§4b) established; the API surface is intentionally minimal and grows task by task.
+**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads, event assignments incl. single-assignment reads), three write endpoints (person, event, and event-assignment creation), the MVP error policy (§4b) established, and the EventAssignment approval contract **defined but not implemented** (§4e); the API surface is intentionally minimal and grows task by task.
 **Last reviewed:** 2026-09-09
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -482,7 +482,86 @@ Explicitly unresolved (business questions — no runtime behavior may
 hard-code an answer): ~~D9 (blocking)~~ (**resolved by D-004** — seed
 migration `0003`; runtime creation of responsibilities stays open,
 narrowed), D29, D30, D11, D3, D8, D10/A6/S13 —
-see the TBD table above.
+see the TBD table above. The approval semantics (D10/A6/S13 and the
+lifecycle questions they opened) now have a defined contract in §4e —
+still entirely unimplemented.
+
+## 4e. EventAssignment Approval Contract (defined — **not implemented**)
+
+**Status: contract only.** No endpoint below exists. Nothing in this section
+is implemented, and no runtime behavior changes because of it: the
+implemented surface remains exactly §4d (list, single, create). The
+`approval_status` column is carried by the reads, never transitioned.
+The domain-side lifecycle contract lives in
+[02-DOMAIN-MODEL.md](02-DOMAIN-MODEL.md) §2.3 ("EventAssignment Approval
+Lifecycle"); this section defines what the *API layer* will need to decide
+when the business decisions land.
+
+### What exists today (evidence, not design)
+
+- The schema carries `approval_status` (`text NOT NULL DEFAULT 'PENDING'`,
+  `CHECK (approval_status IN ('PENDING','APPROVED'))` — docs/03 §5.6,
+  **provisional**, deliberately widenable by a plain migration once the
+  real states are decided; not a DB enum for exactly that reason).
+- Creation always produces `PENDING` (the column default —
+  `EventAssignmentCreate` deliberately has no `approval_status` field; a
+  supplied value is ignored like any unknown field, locked by test).
+- Reads return every row regardless of `approval_status` — the column is
+  reported, never interpreted. (Whether `PENDING` assignments should be
+  visible/inert in the calendar is **TBD-D32**.)
+- No transition of any kind — PENDING→APPROVED included — is implemented
+  or decided anywhere. **PENDING→APPROVED must not be assumed to be the
+  final workflow.**
+
+### Existence vs. approval (prerequisite answer)
+
+The assignment row *is* the assignment; approval is an *attribute*
+(docs/03 §5.6, §2.3 lifecycle). Consequences for the future API: approval
+cannot be modeled as creation-with-approval, an approval prerequisite,
+or a separate "request" resource awaiting approval. Whatever the endpoint
+model, it operates on an **already-existing** assignment row.
+
+### Open questions the future endpoint must wait on
+
+| Question | TBD | Why no answer exists |
+| --- | --- | --- |
+| Real state set (`PENDING`/`APPROVED` sufficient? `REJECTED`/`REVOKED`/…) | TBD-D10 | values are schema placeholders, not decisions |
+| Scope: every assignment approved, or only some? | TBD-A6 | discovery records the need, never the scope |
+| Workflow authority: manager only? another role? | TBD-D31 | discovery names only the manager's *need* — not an authority decision |
+| Technical authorization: which authenticated caller? | TBD-A13/A11 | no auth exists yet — separate from the workflow question |
+| Transitions incl. reversal (`APPROVED→PENDING`) and post-approval rejection (`APPROVED→REJECTED`) | TBD-D10 | nothing is decided; the schema encodes no transition rules |
+| `PENDING` visibility/use semantics (reads, calendar, operational activity) | TBD-D32 | current reads return all rows — carried behavior, not a rule |
+| Audit fields (`approved_by`/`approved_at`/`rejected_by`/`rejected_at`/reason) | TBD-S13 | none are modeled (docs/03 §9); if required → **future schema work** (a migration + read-shape decision), not added now |
+
+### Endpoint model — deliberately undecided
+
+Three candidate shapes appear in general API practice: a field-partial
+update (`PATCH /api/event-assignments/{id}` with `{"approval_status": …}`),
+an action sub-resource (`POST /api/event-assignments/{id}/approve` and
+possibly `…/reject`, `…/revoke`), or a state-machine endpoint carrying a
+transition plus reason. **No repository evidence supports any one of
+them** — no existing endpoint updates anything (all writes are creates;
+the §4d pattern gives no precedent to extend), and the choice depends on
+unresolved business facts (one state field vs. per-action audit, D10 vs.
+D31 vs. S13). Choosing now would be an invented rule; the choice is part
+of the future implementation task, decided together with D10/D31/S13 and
+the error policy rows it will need (e.g. transition-not-allowed is likely
+a new §4b row, status code TBD — 409 is reserved and unused).
+
+The only **shape facts** that any future endpoint inherits for free:
+
+- the target is an existing assignment id (UUID path parameter; unknown →
+  `404 {"detail": "Event assignment not found"}`, §4b rule 4 — same
+  message as the single read);
+- the response is an `EventAssignmentRead` (the established read shape,
+  re-used, not a competing schema) — extended only if/when audit fields
+  are added to the read by their own contract;
+- unknown extra body fields are ignored (Pydantic default, the §4c/§4d
+  precedent).
+
+Everything else — method, path, request body, semantics of the response
+status code, side effects — is decided by the future task together with
+the TBDs above.
 
 ## 5. Tests
 
@@ -525,8 +604,10 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
 - Write endpoints: person creation (§4a), event creation (§4c), and
   event-assignment creation plus its list/single reads (§4d) are
   implemented. **Not implemented** (deliberately): assignment
-  update/delete, approval/rejection (approval semantics are TBD-D10/A6/S13
-  — the provisional `approval_status` is carried, never transitioned),
+  update/delete, approval/rejection — the approval semantics
+  (TBD-D10/A6/S13, plus D31/D32) now have a **defined, unimplemented
+  contract** in §4e; the provisional `approval_status` is carried, never
+  transitioned —
   assignment filtering (e.g. assignments *of* an event / *of* a person —
   a filtered read pattern for the calendar/event views, arrives with its
   own task), reports (D19/A9), remaining person operations (update,
