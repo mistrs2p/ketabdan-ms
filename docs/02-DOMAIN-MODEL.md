@@ -57,11 +57,33 @@ A human member of the branch.
 **Constraints / open questions:**
 
 - **[RESOLVED — D-001]** One Person **may hold multiple roles simultaneously**
-  (approved MVP decision). The data representation of roles — enum, JSON,
-  join table, or other — is a **later schema decision** and remains
-  **TBD-D22**.
+  (approved MVP decision). ~~The data representation of roles — enum, JSON,
+  join table, or other — is a later schema decision (**TBD-D22**)~~
+  **[RESOLVED at schema level — TBD-D22]**: the MVP representation is the
+  normalized `person_roles` join table (docs/03 §5.3).
 - No role-transition rules exist (e.g., learner → supporter) → **TBD-D4**.
   Do not invent any.
+
+**Creation (contract for the future write path):**
+
+Established facts — already encoded in the approved schema
+(docs/03 §5.1), not new decisions:
+
+- `name` is **required** at creation (single free-text field; its business
+  structure, normalization, and length rules remain **TBD-D1**).
+- `phone` is **optional** at creation (nullable; duplicates currently
+  allowed — uniqueness remains **TBD-D2**).
+- A Person is created **active by default** (`active` defaults to `true`).
+  Inactive persons are a normal state the schema contemplates; what
+  "inactive" *implies* (e.g., future assignments) stays **TBD-D3**.
+- Roles: multiple simultaneous roles are allowed (**D-001**). The schema
+  permits a person with **zero** roles; whether the business *requires* at
+  least one role at creation is **TBD-D24** (new, §7).
+
+The API-level creation contract (role input format, atomicity, response,
+validation boundaries) is defined in
+[06-BACKEND-API.md](06-BACKEND-API.md) §4a. No Person write endpoint exists
+yet.
 
 ### 2.2 Event
 
@@ -205,9 +227,10 @@ Permanent organizational roles a person can hold (confirmed list, semantics per
 **Modeling stance:** roles are modeled as a concept distinct from event
 responsibilities. **[Approved — D-001]** a Person may hold multiple roles
 simultaneously — at the conceptual level a Person has a *set of roles*.
-Whether the data representation is one enum, a set of role-records, a join
-table, or something richer is a **later schema decision** (**TBD-D22**) —
-not to be decided now.
+~~Whether the data representation is one enum, a set of role-records, a join
+table, or something richer is a later schema decision (**TBD-D22**)~~
+**[RESOLVED at schema level — TBD-D22]**: the MVP representation is the
+normalized `person_roles` join table (docs/03 §5.3).
 
 ---
 
@@ -258,7 +281,7 @@ erDiagram
     PERSON {
         string name
         string phone
-        string-set roles "multiple simultaneous roles (D-001); representation TBD-D22"
+        string-set roles "multiple simultaneous roles (D-001); schema: person_roles join table"
         boolean active
     }
     EVENT {
@@ -338,8 +361,9 @@ resolved by an approved decision (§1.1).
 | TBD-D19 | Who may create/edit an EventReport | open |
 | ~~TBD-D20~~ | ~~Is an EventReport required for every event~~ | **resolved by D-003: not required; 0..1 per Event** |
 | TBD-D21 | Manager response/acknowledgment of reports | open |
-| TBD-D22 | Role data representation (implementation-level, decide at schema time) | open (D-001 resolved the *semantics*; representation is still a schema decision) |
+| ~~TBD-D22~~ | ~~Role data representation (implementation-level, decide at schema time)~~ | **resolved at schema level: the `person_roles` join table (docs/03 §5.3); D-001 semantics unchanged** |
 | TBD-D23 | Authorization of event status transitions — who may move an event between states (incl. who completes/cancels) | open (new — surfaced by D-002) |
+| TBD-D24 | Minimum role requirement at creation: may a Person exist with **zero** roles, or is at least one role required? | open (new — surfaced by the Person creation contract, docs/06 §4a; the schema permits zero roles, so this is a business question, not a technical one) |
 | ~~TBD-A1~~ | ~~Multi-role persons~~ | **resolved by D-001: multiple simultaneous roles allowed** |
 | TBD-A3/A4 | Availability semantics/usage | open |
 | TBD-A6 | Approval scope of assignments | open |
