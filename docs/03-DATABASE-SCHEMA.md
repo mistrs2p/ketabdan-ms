@@ -1,9 +1,9 @@
 # 03 — Database Schema Design
 
 **Project:** Ketabdaneh
-**Document status:** Design artifact for future PostgreSQL implementation — NOT implemented. No tables, migrations, or SQL exist yet.
+**Document status:** Design artifact — implemented: SQLAlchemy models (docs/04) and Alembic migrations `0001`–`0003` (docs/05) follow this schema; the live development database is at migration head. Design remains the authority for future changes.
 **Last reviewed:** 2026-09-09
-**Depends on:** [00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md), [01-ARCHITECTURE.md](01-ARCHITECTURE.md), [02-DOMAIN-MODEL.md](02-DOMAIN-MODEL.md) (approved decisions D-001/D-002/D-003 are authoritative)
+**Depends on:** [00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md), [01-ARCHITECTURE.md](01-ARCHITECTURE.md), [02-DOMAIN-MODEL.md](02-DOMAIN-MODEL.md) (approved decisions D-001/D-002/D-003/D-004 are authoritative)
 
 ---
 
@@ -487,6 +487,6 @@ labeled technical choices above).
 
 ## 15. Out of Scope for This Document
 
-Implementation of any of the above: no SQL, no migrations, no SQLAlchemy, no
-Alembic, no Docker/PostgreSQL changes, no API, no auth, no frontend. This
-document is the review artifact for the future implementation task.
+Implementation detail: this document defines the schema design; the
+implementation itself lives in SQLAlchemy models (docs/04) and Alembic
+migrations (docs/05). No API, auth, or frontend design belongs here.

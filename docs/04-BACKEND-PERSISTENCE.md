@@ -1,9 +1,9 @@
 # 04 — Backend Persistence Foundation
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — ORM/model and session foundation. No migrations, no business APIs yet.
+**Document status:** Implementation artifact — ORM/model and session foundation (the target of migrations `0001`–`0003`, docs/05). Business API endpoints are documented separately in [06-BACKEND-API.md](06-BACKEND-API.md).
 **Last reviewed:** 2026-09-09
-**Depends on:** [03-DATABASE-SCHEMA.md](03-DATABASE-SCHEMA.md) (authoritative design), [02-DOMAIN-MODEL.md](02-DOMAIN-MODEL.md) (approved decisions D-001/D-002/D-003)
+**Depends on:** [03-DATABASE-SCHEMA.md](03-DATABASE-SCHEMA.md) (authoritative design), [02-DOMAIN-MODEL.md](02-DOMAIN-MODEL.md) (approved decisions D-001/D-002/D-003/D-004)
 
 ---
 
@@ -11,7 +11,7 @@
 
 Document the backend persistence layer implementing the approved MVP schema
 (docs/03) as SQLAlchemy 2.x ORM models, plus the database engine/session
-foundation that future tasks (Alembic migrations, business APIs) will build on.
+foundation that later phases (business APIs, frontend) build on.
 
 ```
 FastAPI (app/main.py)
@@ -42,11 +42,23 @@ apps/api/
 │   │   ├── event_responsibility.py
 │   │   ├── event_assignment.py  # EventAssignment, ApprovalStatus
 │   │   └── event_report.py      # EventReport
-│   └── main.py                  # FastAPI app (health endpoint unchanged)
+│   ├── schemas/                 # API request/response models (docs/06)
+│   ├── services/                # creation logic (persons, events,
+│   │                            #   event assignments — docs/06 §3 rule 4)
+│   ├── api/                     # routers (docs/06)
+│   └── main.py                  # FastAPI app (routers + /api/health)
 └── tests/
-    ├── conftest.py              # in-memory SQLite fixtures
+    ├── conftest.py              # in-memory SQLite fixtures + TestClient
+    ├── test_api_health.py       # health endpoint contract
+    ├── test_api_roles.py        # roles read
+    ├── test_api_persons.py      # persons read/create
+    ├── test_api_events.py       # events read/create
+    ├── test_api_event_assignments.py  # assignments read/create
+    ├── test_api_error_policy.py # error-policy behavior locks (docs/06 §4b)
     ├── test_models_metadata.py  # metadata matches docs/03
-    └── test_persistence.py      # round-trip/constraint/delete-behavior tests
+    ├── test_persistence.py      # round-trip/constraint/delete-behavior tests
+    ├── test_seed_migration.py   # 0002 role seed (disposable PostgreSQL)
+    └── test_responsibility_seed_migration.py  # 0003 responsibility seed
 ```
 
 ## 3. Configuration
@@ -118,20 +130,23 @@ the database's ON DELETE behavior instead of nullifying child FKs.
 
 ## 7. Deferred / Out of Scope (unchanged from docs/03)
 
-- **Alembic migrations** — future task; `Base.metadata` is the target.
+- **Alembic migrations** — done: `0001` (schema), `0002` (role seeds),
+  `0003` (responsibility seeds); see docs/05. Future schema changes follow
+  that chain.
 - **Task / Availability models** — deferred (docs/03 §13).
-- **Seed data** (six roles) — seeded by Alembic migration `0002`
-  (docs/05 §5a). Example responsibilities are **not** seeded (taxonomy
-  TBD-D9).
-- Remaining business APIs (the read-only roles endpoint exists — docs/06),
-  auth, calendar/Jalali logic, etc.
+- **Seed data** — six roles seeded by Alembic migration `0002`
+  (docs/05 §5a); six event responsibilities seeded by migration `0003`
+  (D-004, docs/05 §5b). Runtime creation of responsibilities remains
+  open (TBD-D9, narrowed).
+- Business API endpoints are documented in docs/06 (persons, events,
+  event-assignments); auth, calendar/Jalali logic, etc. remain open.
 
 ## 8. Validation
 
 From `apps/api` (venv active):
 
 ```bash
-python -m pytest tests          # 24 tests: metadata + round-trip (SQLite)
+python -m pytest tests          # metadata, round-trip (SQLite), API tests
 python -m app.db.check          # dev-only PostgreSQL connectivity check
 uvicorn app.main:app --port 8000  # /api/health works without DATABASE_URL
 ```
