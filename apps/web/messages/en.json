@@ -50,5 +50,36 @@
         "placeholder": "This is a placeholder page; people management will be implemented later."
       }
     }
+  },
+  "people": {
+    "description": "Branch members and their responsibilities.",
+    "addPerson": "Add person",
+    "addPersonDisabledHint": "Person creation will be implemented in a later task.",
+    "table": {
+      "caption": "Branch members",
+      "name": "Name",
+      "phone": "Phone",
+      "roles": "Roles",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "phoneUnavailable": "—",
+    "noRoles": "—",
+    "viewAction": "View",
+    "viewDisabledHint": "Person details will be implemented in a later task.",
+    "loading": "Loading people…",
+    "error": {
+      "title": "Could not load people",
+      "network": "The branch members list is unavailable right now. Check that the backend service is running and try again.",
+      "server": "The branch members list is unavailable right now. Try again in a moment."
+    },
+    "empty": {
+      "title": "No people have been added yet",
+      "description": "Branch members appear here once they are added."
+    }
   }
 }
