@@ -12,6 +12,7 @@ from app.models.event_responsibility import EventResponsibility
 from app.models.person import Person
 from app.models.person_role import PersonRole
 from app.models.role import Role
+from app.models.user import User
 
 __all__ = [
     "ApprovalStatus",
@@ -23,4 +24,5 @@ __all__ = [
     "Person",
     "PersonRole",
     "Role",
+    "User",
 ]

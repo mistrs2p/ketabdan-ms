@@ -18,6 +18,11 @@ MVP_TABLES = {
     "event_reports",
 }
 
+# The authentication identity table (Phase 5, docs/06 §4f) sits alongside
+# the seven MVP business tables — deliberately not part of MVP_TABLES,
+# which the tests below use to assert the *business* schema of docs/03.
+AUTH_TABLES = {"users"}
+
 
 def unique_column_names(table_name: str) -> set[str]:
     """Names of columns covered by a single-column UNIQUE constraint."""
@@ -38,7 +43,16 @@ def check_constraints(table_name: str) -> list[str]:
 
 
 def test_exactly_the_seven_mvp_tables_registered() -> None:
-    assert set(Base.metadata.tables) == MVP_TABLES
+    # Business schema (docs/03 §5) plus the Phase 5 auth table — nothing
+    # else may register: no invented tables, no tasks/availability.
+    assert set(Base.metadata.tables) == MVP_TABLES | AUTH_TABLES
+
+
+def test_users_table_shape() -> None:
+    # docs/06 §4f: login identity — unique username, opaque hash, switch.
+    table = Base.metadata.tables["users"]
+    assert unique_column_names("users") == {"username"}
+    assert set(table.columns.keys()) >= {"id", "username", "password_hash", "active"}
 
 
 def test_uuid_primary_keys_on_all_tables() -> None:

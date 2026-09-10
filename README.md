@@ -118,7 +118,8 @@ The web app is now available at http://localhost:3000.
 
 ## Current Project Status
 
-**Phase 4 (Frontend) complete.** The repository contains the runnable
+**Phase 4 (Frontend) complete; Phase 5 (Auth) underway.** The repository
+contains the runnable
 full-stack application: local development infrastructure, the approved
 domain model and database schema design
 ([docs/02](docs/02-DOMAIN-MODEL.md), [docs/03](docs/03-DATABASE-SCHEMA.md)),
@@ -134,6 +135,14 @@ API ([docs/06](docs/06-BACKEND-API.md)) — exactly 10 routes:
 `POST /api/event-assignments` — plus the API error policy and the
 EventAssignment approval contract (defined, not implemented).
 
+Task 5.1 added the **backend authentication foundation** (docs/06 §4f):
+a `users` table (migration `0004`, separate from `persons`), Argon2id
+password hashing, HS256 JWT access tokens, `POST /api/auth/login` and
+`GET /api/auth/me` (generic 401s, no user enumeration), and the
+`python -m app.create_user` bootstrap CLI — no default account. Business
+routes remain unauthenticated until Task 5.2 (authorization/RBAC), and
+there is no frontend login UI yet.
+
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark
 theming, the typed API client layer (`apps/web/lib/api/`), and the
@@ -142,8 +151,8 @@ detail, weekly Calendar (read-only visualization), event Assignments
 (read/create) inside Event detail, and the manager Dashboard (operational
 overview built from the existing list APIs). No dashboard backend endpoint
 was added. The remaining business APIs and UI features (tasks, reports,
-approval workflow, availability, auth) follow as the open domain questions
-([docs/00](docs/00-PROJECT-CONTEXT.md) §7) are resolved.
+approval workflow, availability, frontend auth) follow as the open domain
+questions ([docs/00](docs/00-PROJECT-CONTEXT.md) §7) are resolved.
 
 ## Conventions
 
