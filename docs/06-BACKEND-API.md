@@ -1,8 +1,8 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads, event assignments incl. single-assignment reads), three write endpoints (person, event, and event-assignment creation), the MVP error policy (§4b) established, and the EventAssignment approval contract **defined but not implemented** (§4e); the API surface is intentionally minimal and grows task by task. **Phase 3 — CLOSED / FROZEN 2026-09-09 (§8).**
-**Last reviewed:** 2026-09-09
+**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads, event assignments incl. single-assignment reads), three write endpoints (person, event, and event-assignment creation), the MVP error policy (§4b) established, the EventAssignment approval contract **defined but not implemented** (§4e), and the authentication foundation (§4f — login/me implemented; **authorization/RBAC not implemented**); the API surface is intentionally minimal and grows task by task. **Phase 3 — CLOSED / FROZEN 2026-09-09 (§8).**
+**Last reviewed:** 2026-09-10
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
 ---
@@ -34,12 +34,18 @@ response model (same API schema) → JSON
 apps/api/app/
 ├── api/
 │   ├── __init__.py
+│   ├── auth.py         # auth router: login, me, get_current_user (§4f)
 │   ├── event_assignments.py  # event-assignments router (POST create)
 │   ├── events.py       # events router (GET list/single, POST create)
 │   ├── persons.py      # persons router
 │   └── roles.py        # one router module per resource
+├── core/
+│   ├── config.py       # Settings (pydantic-settings; auth vars, §4f)
+│   └── security.py     # all cryptography: Argon2id + JWT (§4f)
+├── create_user.py      # bootstrap CLI: python -m app.create_user (§4f)
 ├── schemas/
 │   ├── __init__.py
+│   ├── auth.py         # LoginRequest, TokenResponse, UserRead (§4f)
 │   ├── event_assignment.py  # EventAssignmentCreate (request),
 │   │                        #   EventAssignmentRead (response, §4d)
 │   ├── event.py        # EventCreate (request), EventRead (response)
@@ -47,6 +53,7 @@ apps/api/app/
 │   └── role.py         # RoleRead — request/response models for roles
 ├── services/
 │   ├── __init__.py
+│   ├── auth.py         # authenticate / issue / verify tokens, create_user (§4f)
 │   ├── event_assignments.py  # create_event_assignment — reference
 │   │                          #   resolution (§4d)
 │   ├── events.py       # create_event — always-DRAFT invariant (§4c)
@@ -102,6 +109,12 @@ apps/api/app/
 | GET | `/api/event-assignments` | List assignments — the stable baseline read | Ordered by `id`; returns `EventAssignmentRead` items (responsibility embedded, event/person referenced by id); no pagination/filter/search (deliberately) |
 | GET | `/api/event-assignments/{assignment_id}` | Return one assignment by id | `EventAssignmentRead`; unknown-but-valid UUID → `404 {"detail": "Event assignment not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
 | POST | `/api/event-assignments` | Create an assignment (§4d) | `201 Created` with the `EventAssignmentRead` shape `{id, event_id, person_id, responsibility: {id, code, name, active}, approval_status}` — always `PENDING`; unknown event/person UUID → 404, unknown responsibility code → 422 |
+| POST | `/api/auth/login` | Verify credentials, issue an access token (§4f) | `200 {access_token, token_type: "bearer", expires_in}`; any failure → generic `401` (no user enumeration) |
+| GET | `/api/auth/me` | The authenticated identity (§4f) | Requires `Authorization: Bearer <token>`; returns `{id, username, active}` (never `password_hash`); any token failure → generic `401` |
+
+The business routes above (health, roles, persons, events,
+event-assignments) remain **unauthenticated** in Task 5.1 — protecting
+them is Task 5.2's scope (§4f status note).
 
 Roles are **read-only by design**: the six rows are migration-owned reference
 data (docs/05 §5a). No create/update/delete endpoints exist for them —
@@ -563,17 +576,149 @@ Everything else — method, path, request body, semantics of the response
 status code, side effects — is decided by the future task together with
 the TBDs above.
 
+## 4f. Authentication Foundation (implemented — Phase 5, Task 5.1)
+
+**Status: authentication only.** Who a caller *is* — login, token
+verification, `GET /api/auth/me`. **Authorization / RBAC is NOT
+implemented**: no business endpoint checks identity or roles yet, and
+403 is reserved for that future task (5.2). All ten Phase 3 routes
+(§8) plus `/api/health` remain callable without a token, exactly as
+before — protecting them is Task 5.2's scope, applied systematically.
+
+### Identity model — decisions
+
+- **`users` table (migration `0004`), separate from `persons`.** A User
+  is *who is logged in*; a Person is a business entity (a branch
+  member). No foreign key between them — linking a user to a person is
+  future work with its own TBDs, and forcing it now would invent a
+  rule. Columns: `id` (UUID PK), `username` (unique), `password_hash`
+  (Argon2id), `active` (bool, default true), `created_at`/`updated_at`
+  (existing TimestampMixin conventions).
+- **Login identifier: username, not email.** No email exists anywhere
+  in the domain model (docs/03 §5.1), the app is internal and
+  manager-operated, and there is no mail flow — email would be an
+  invented requirement. Usernames are stored and compared in one
+  canonical form (trimmed + casefolded, applied at creation *and*
+  lookup in `app/services/auth.py`).
+- **No public registration.** This is an internal application; the only
+  user-creation path is the bootstrap CLI below. There is no signup
+  endpoint, and none is planned.
+- **Password policy (minimal):** non-empty and ≥ 8 characters, enforced
+  at creation only (login treats the password as an opaque secret).
+  No complexity rules — the app is internal; inventing enterprise
+  policy is out of scope.
+
+### Hashing and tokens
+
+- **Passwords:** Argon2id via `argon2-cffi` with the library's curated
+  defaults (`app/core/security.py`). No custom crypto, no SHA/MD5, no
+  reversible storage. Verification is the library's constant-time
+  `verify`; a parameter change on old hashes triggers a transparent
+  rehash on the next successful login.
+- **Access tokens:** JWT HS256 via `pyjwt`. The decode path pins the
+  algorithm list (a token's `alg` header can never select another
+  algorithm) and requires `exp` + `sub`. The token carries `sub` (user
+  id), `typ: "access"` (future refresh tokens will be rejected by
+  today's code), `iat`, `exp`. There is no refresh token and no logout
+  endpoint — MVP scope; tokens simply expire.
+- **Configuration (env, see `apps/api/.env.example`):**
+  `AUTH_SECRET_KEY`, `AUTH_ALGORITHM` (default `HS256`),
+  `ACCESS_TOKEN_EXPIRE_MINUTES` (default `60`), and
+  `AUTH_ALLOW_INSECURE_DEV_SECRET`. The secret's placeholder default is
+  intentionally unsafe and allowed only for local development; with
+  `AUTH_ALLOW_INSECURE_DEV_SECRET=0`, login and token verification
+  refuse to run on the placeholder — production can never silently
+  sign tokens with a publicly known secret.
+
+### Endpoints
+
+| Method | Route | Purpose | Notes |
+| --- | --- | --- | --- |
+| POST | `/api/auth/login` | Verify credentials, issue an access token | Body `{"username", "password"}`; `200` below; any failure → generic `401` |
+| GET | `/api/auth/me` | The authenticated identity | Requires `Authorization: Bearer <token>`; `200` below; any failure → generic `401` |
+
+`POST /api/auth/login` success:
+
+```json
+{"access_token": "<jwt>", "token_type": "bearer", "expires_in": 3600}
+```
+
+`expires_in` is seconds (OAuth2-style field name). `GET /api/auth/me`
+success: `{"id", "username", "active"}` — the public projection of a
+User; `password_hash` is never in any response.
+
+**Request header format** for authenticated calls (today only `/me`;
+Task 5.2 extends it to business endpoints):
+
+```
+Authorization: Bearer <access_token>
+```
+
+### Error semantics — one generic 401, always
+
+Every authentication failure is `401` with the same body — no caller
+can distinguish unknown user, wrong password, inactive account, missing
+token, malformed token, wrong signature, or expired token:
+
+- login failures: `{"detail": "Invalid username or password"}`
+- token failures: `{"detail": "Not authenticated"}`, plus
+  `WWW-Authenticate: Bearer`
+
+This is deliberate user-enumeration protection (unknown-user and
+wrong-password responses are byte-identical; the unknown-user path also
+performs a dummy Argon2 verification so timing does not leak account
+existence). `403` is **not** used anywhere yet — reserved for
+authorization (Task 5.2). No auth failure produces a 500 or leaks
+internal exception details; the password policy and duplicate-username
+errors exist only in the bootstrap path, not in any HTTP response.
+
+### Bootstrap: creating the first user
+
+There is no default account and no well-known password anywhere in the
+codebase. A developer/admin creates the first (or any) user
+interactively:
+
+```bash
+cd apps/api
+python -m app.create_user <username>     # prompts for the password twice
+```
+
+The password is read via `getpass` — never a command-line argument,
+never written to logs or output (only the username and id are echoed).
+Re-running with an existing username fails cleanly and never resets the
+account. The service behind it (`app/services/auth.py: create_user`)
+enforces the password policy and rejects duplicate canonical usernames
+atomically.
+
+### Where the code lives
+
+| File | Role |
+| --- | --- |
+| `app/core/security.py` | Hashing + JWT primitives (all crypto in one module) |
+| `app/services/auth.py` | HTTP-free domain logic: authenticate, issue/verify tokens, create_user |
+| `app/api/auth.py` | Router + `get_current_user` dependency (reused by Task 5.2) |
+| `app/schemas/auth.py` | `LoginRequest`, `TokenResponse`, `UserRead` (no hash) |
+| `app/models/user.py` | `User` ORM model |
+| `app/create_user.py` | Bootstrap CLI |
+| `alembic/versions/0004_create_users_table.py` | Migration |
+
 ## 5. Tests
 
 The API test files (`tests/test_api_health.py`, `tests/test_api_roles.py`,
 `tests/test_api_persons.py`,
 `tests/test_api_events.py`, `tests/test_api_event_assignments.py`,
-`tests/test_api_error_policy.py`) exercise the
+`tests/test_api_error_policy.py`, `tests/test_api_auth.py`) exercise the
 full HTTP stack — routing, dependency injection, response serialization —
 with FastAPI's `TestClient`. The error-policy tests lock the status codes
 and body shapes documented in §4b; the assignment tests additionally lock
 the carried-not-interpreted TBDs (D3, D29, D30, D11) as current behavior,
-and the list/single read shape and ordering.
+and the list/single read shape and ordering. The auth tests
+(`tests/test_api_auth.py`) lock the §4f contract: hashing properties
+(not plaintext, verifies, wrong fails), the login body shape, the
+indistinguishable generic 401s (wrong password / unknown user / inactive
+/ missing / malformed / wrong-signature / expired / deleted-user token),
+the no-hash `/me` projection, token claims, health staying public, and
+the bootstrap service rules (duplicate username, password policy).
 The shared `client` fixture
 (conftest.py) overrides `get_db` with the in-memory SQLite session, which
 uses `StaticPool` + `check_same_thread=False` because TestClient runs the
@@ -589,19 +734,25 @@ From `apps/api` (venv active, PostgreSQL running):
 ```bash
 python -m pytest                 # all tests, including API tests (SQLite)
 python -m app.db.check           # real database connectivity
+python -m app.create_user <name> # bootstrap an auth user (§4f; prompts)
 uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
                                  #       POST /api/persons, GET /api/persons,
                                  #       POST /api/events, GET /api/events,
                                  #       GET /api/events/{event_id},
                                  #       POST /api/event-assignments,
                                  #       GET /api/event-assignments,
-                                 #       GET /api/event-assignments/{assignment_id}
+                                 #       GET /api/event-assignments/{assignment_id},
+                                 #       POST /api/auth/login (§4f),
+                                 #       GET /api/auth/me with the token (§4f)
 ```
 
 ## 7. Out of Scope (unchanged TBDs)
 
-- **Authentication/authorization** — TBD-A13/A11; no route requires identity
-  yet. When auth lands, it will be enforced inside this layer (docs/01 §4).
+- **Authorization — TBD-A13/A11; not implemented.** The authentication
+  foundation (§4f) is implemented, but no route *requires* identity yet;
+  Task 5.2 enforces authentication on business routes and decides
+  role/permission checks. When that lands, it will be enforced inside
+  this layer (docs/01 §4).
 - Write endpoints: person creation (§4a), event creation (§4c), and
   event-assignment creation plus its list/single reads (§4d) are
   implemented. **Not implemented** (deliberately): assignment
@@ -663,6 +814,11 @@ sound; this record is the final state at freeze.
   `python -m app.db.check` — OK; live smoke of all five read families plus
   single-resource 404s and creation atomicity — all per contract; business
   tables empty (reference seed data only).
+
+  *Post-freeze note (Phase 5, 2026-09-10):* the ten routes above are the
+  frozen Phase 3 business surface and remain unchanged. Task 5.1 added
+  two auth routes outside it — `POST /api/auth/login` and
+  `GET /api/auth/me` (§4f) — without modifying any frozen route.
 
 ### Intentionally NOT in Phase 3 (later phases/tasks)
 
