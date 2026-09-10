@@ -169,8 +169,22 @@ logout is client-side only (the backend has no revocation endpoint).
 The frontend contains **no authorization logic** — roles/permissions
 stay server-side. The API now also serves CORS from a configured
 allow-list (`CORS_ALLOW_ORIGINS`) since the browser calls it directly.
-Protected routes, auth-aware navigation, and redirect logic are Task 5.4
-and are **not implemented yet**.
+
+Task 5.4 added **protected routes and auth-aware navigation**
+(docs/06 §4i): the `(app)` route group (dashboard, calendar, events,
+people, tasks — both locales) is wrapped in a client-side `AuthGate`
+that redirects unauthenticated visitors to the locale-aware login with
+a validated `returnTo` (internal locale-prefixed paths only — no open
+redirect), renders a loading state instead of protected content (no
+flash in the served HTML), and sends already-authenticated visitors on
+`/login` to the dashboard. Because the token lives in `localStorage`,
+middleware cannot read it — the guard is deliberately client-side: an
+authentication boundary in the browser, not server-side access control
+(httpOnly-cookie/BFF remains the documented future option). The header
+now shows the signed-in username and a localized logout button.
+Navigation distinguishes only authenticated vs unauthenticated —
+**no permission-based UI hiding** (backend RBAC stays the real
+permission enforcement).
 
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark

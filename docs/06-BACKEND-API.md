@@ -898,13 +898,13 @@ web dev origins; empty disables the middleware). `allow_credentials` is
 False — authentication is a Bearer header, not cookies, so no
 wildcard-credential combination exists.
 
-### What is deliberately *not* in 5.3 (Task 5.4 scope)
+### What is deliberately *not* in 5.3
 
-- No protected routes and no route redirects — an unauthenticated user
-  can still open existing pages (their data fetches will 401).
-- No auth-aware navigation (no logout button in the nav, no user menu).
 - No token refresh mechanism (the token simply expires; the user
   re-logs).
+
+Protected routes, auth-aware navigation, and redirect logic were Task
+5.4 scope and are implemented — see §4i.
 
 ### Where the code lives
 
@@ -915,6 +915,96 @@ wildcard-credential combination exists.
 | `apps/web/app/[locale]/login/page.tsx`, `apps/web/components/auth/LoginForm.tsx` | The login page and its client form |
 | `apps/web/tests/auth-{storage,api,provider}.test.*`, `tests/login-form.test.tsx` | Unit/component tests (vitest + testing-library) |
 | `app/main.py`, `app/core/config.py` | CORS middleware + `CORS_ALLOW_ORIGINS` setting |
+
+
+## 4i. Protected Routes & Auth-Aware Navigation (implemented — Phase 5, Task 5.4)
+
+**Status: the web app now has a client-side authentication boundary
+around its application pages.** The backend contract is again unchanged
+— no endpoint was added, modified, or removed. What 5.4 added lives
+entirely in `apps/web`.
+
+### Protection strategy and its (documented) limitation
+
+The token is in `localStorage` (§4h), which **server code cannot read**
+— Next.js middleware would have no access to it, so it cannot make a
+real authentication decision. Pretending otherwise (e.g. an
+unauthenticated-looking middleware guess) would be security theater.
+The chosen architecture is therefore a **client-side guard at the
+route-group boundary**, with a structural no-flash guarantee:
+
+- The `(app)` route group (dashboard, calendar, events list/new/detail,
+  people list/new/detail, tasks — both locales) is wrapped once in its
+  layout by `AuthGate`. The `login` page sits *outside* that group and
+  stays public. Protection is structural (route-group membership), not
+  a hard-coded URL list, and no page duplicates the check.
+- On the very first render — including the server render (SSR/SSG) —
+  the gate is in its `isLoading` state and renders only a `role=status`
+  loading indicator. **Protected content is never part of the server
+  HTML**, so there is no unauthenticated flash before the redirect.
+
+**Limitation:** this is an *authentication boundary in the browser*,
+not a server-side access control. A determined user can inspect client
+bundle code; nothing in the served HTML is secret (business data still
+requires a valid Bearer token from the API). A server-side gate would
+require moving the token to an httpOnly cookie behind a BFF —
+deliberately out of scope for the MVP (§4h's storage decision).
+
+### Route classification
+
+| Class | Routes | Behavior |
+| --- | --- | --- |
+| Public | `/fa/login`, `/en/login` | Fully rendered without a session. An *already-authenticated* visitor is redirected to the locale-aware dashboard. |
+| Protected | every `(app)` route: dashboard, calendar, events (list/new/`[eventId]`), people (list/new/`[personId]`), tasks — in both locales | Unauthenticated → redirect to the locale-aware login with `returnTo`. Loading → localized "restoring session" indicator, no content. Authenticated → the normal app shell. |
+
+### Redirect rules
+
+| Situation | Redirect |
+| --- | --- |
+| Unauthenticated visiting a protected route | `router.replace` to `/{locale}/login?returnTo={currentPath}` — locale preserved (fa→fa, en→en). `replace` (not `push`) keeps the protected URL out of the history stack. |
+| Mid-session 401 (expired/invalidated token) | The §4h client clears the token, the provider flips to unauthenticated, and the same gate redirects to the locale-aware login. No loops, no repeated `/me` calls, no raw 401 detail shown. |
+| Login success with `returnTo` | Back to the validated original route (see below). |
+| Login success without `returnTo` | The locale-aware dashboard. |
+| Authenticated user visiting `/login` | The locale-aware dashboard (only after session restoration settles — never during `isLoading`). |
+| Logout | Token cleared + session reset (§4h semantics), then `replace` to the locale-aware login. Back-after-logout lands before the protected page and the gate re-checks — no usable protected page. |
+
+### `returnTo` validation (open-redirect prevention)
+
+`returnTo` is **never** used unvalidated. `sanitizeReturnTo`
+(`apps/web/lib/auth/returnTo.ts`) accepts only locale-prefixed internal
+paths and rejects everything else — absolute URLs (`https://…`),
+protocol-relative URLs (`//evil.example`, `/\evil.example`), any `:` or
+`\` anywhere (kills `javascript:`, `data:`, and scheme tricks), paths
+without a locale prefix, and any `/login` target including its query
+variants (`/login?…`, `/login/…`) as a loop guard. A rejected value
+falls back to the dashboard. The login page's post-login navigation
+uses only this validated result — there is no raw
+`router.push(returnTo)` anywhere.
+
+### Auth-aware navigation (and what it deliberately is *not*)
+
+The header shows the signed-in **username only** (the `/me` contract:
+`{id, username, active}`) and a localized logout button — nothing
+else. There is **no permission- or role-based UI hiding**: navigation
+visibility distinguishes only authenticated vs unauthenticated.
+**Frontend route protection is an authentication boundary; backend RBAC
+(§4g) is the real permission enforcement** — an authenticated user
+without `people:create` still sees the People screens and receives a
+403 from the API when acting beyond their permissions. No roles or
+permissions are displayed, inferred from the username, or modeled
+client-side.
+
+### Where the code lives
+
+| File | Role |
+| --- | --- |
+| `apps/web/components/auth/AuthGate.tsx` | The (app)-group guard: loading state, unauthenticated redirect (locale-aware, with `returnTo`, exactly-once), authenticated render |
+| `apps/web/lib/auth/returnTo.ts` | `sanitizeReturnTo` / `splitLocalePath` — the closed set of safe internal targets |
+| `apps/web/components/layout/UserMenu.tsx` | Username display + localized logout (clear + locale-aware redirect) |
+| `apps/web/components/auth/LoginForm.tsx` | Post-login navigation (validated `returnTo` or dashboard); authenticated-visitor bounce to dashboard |
+| `apps/web/app/[locale]/(app)/layout.tsx` | The single wrap point: `AuthGate` around the existing `AppShell` |
+| `apps/web/components/LocaleSwitcher.tsx` | Preserves the query string so `returnTo` survives a locale switch on the login page |
+| `apps/web/tests/{return-to,auth-gate}.test.*`, `tests/login-form.test.tsx` | Guard/redirect/locale/returnTo/logout/401 tests |
 
 
 ## 5. Tests

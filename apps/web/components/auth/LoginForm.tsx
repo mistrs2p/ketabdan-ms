@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/routing";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { sanitizeReturnTo } from "@/lib/auth/returnTo";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -18,12 +19,18 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 // frontend preserves that (docs/06 §4f anti-enumeration). Network
 // failures get their own message. Raw backend detail is never shown.
 //
-// On success the router sends the user to the dashboard — the locale
-// prefix stays intact (routing.push). No token/credential ever lands in
-// the URL.
+// Navigation (Task 5.4):
+// - A visitor who is already authenticated (e.g. followed a link to
+//   /login after a session restore) is sent to the dashboard — but
+//   only AFTER restoration finishes (`isLoading === false`), never
+//   during it, and never back to `/login` itself (no loops).
+// - On successful login the user returns to the validated `returnTo`
+//   path (set by the AuthGate redirect) or the dashboard. `replace`
+//   keeps the login URL out of the history stack so Back stays in the
+//   app. No token/credential ever lands in the URL.
 export function LoginForm() {
   const t = useTranslations("login");
-  const { login } = useAuth();
+  const { login, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
   const [username, setUsername] = useState("");
@@ -32,6 +39,32 @@ export function LoginForm() {
   const [usernameError, setUsernameError] = useState<string | undefined>();
   const [passwordError, setPasswordError] = useState<string | undefined>();
   const [formError, setFormError] = useState<string | undefined>();
+
+  // Already-authenticated visitors: replace to the dashboard once, and
+  // only after session restoration has settled (redirecting during
+  // `isLoading` would bounce a user whose token is being validated).
+  // The `submitting` guard matters: after a successful form login the
+  // provider flips to authenticated while still on this page, and the
+  // form's own navigation (returnTo/dashboard) must win — without the
+  // guard both navigations would race and the effect's /dashboard
+  // could clobber the returnTo target.
+  const bouncedRef = useRef(false);
+  useEffect(() => {
+    if (isLoading || !isAuthenticated || submitting || bouncedRef.current) {
+      return;
+    }
+    bouncedRef.current = true;
+    router.replace("/dashboard");
+  }, [isLoading, isAuthenticated, submitting, router]);
+
+  // The validated post-login target: the sanitized `returnTo` from the
+  // URL, or the dashboard fallback. Read once via the browser location
+  // (validated before use — never a raw router.push of user input).
+  const returnTarget = sanitizeReturnTo(
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search).get("returnTo"),
+  );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,7 +82,13 @@ export function LoginForm() {
     setSubmitting(true);
     try {
       await login(trimmedUsername, password);
-      router.push("/dashboard");
+      // Safe internal path only: sanitizeReturnTo rejected absolute
+      // URLs, protocol-relative URLs, schemes, and non-locale paths.
+      if (returnTarget) {
+        router.replace(returnTarget.path);
+      } else {
+        router.replace("/dashboard");
+      }
     } catch (e) {
       const error =
         e instanceof ApiError ? e : new ApiError("server", String(e));

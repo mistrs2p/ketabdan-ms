@@ -18,8 +18,13 @@ export function LocaleSwitcher() {
 
   function switchTo(next: Locale) {
     // Full navigation: next-intl's router updates the URL prefix, and the
-    // server layout re-renders <html lang dir> for the new locale.
-    router.replace(pathname, { locale: next });
+    // server layout re-renders <html lang dir> for the new locale. The
+    // current query string is preserved (e.g. the login page's
+    // `?returnTo=…`, Task 5.4) — without it a language switch on /login
+    // would silently drop the post-login destination.
+    const query =
+      typeof window === "undefined" ? "" : window.location.search;
+    router.replace(`${pathname}${query}`, { locale: next });
   }
 
   return (

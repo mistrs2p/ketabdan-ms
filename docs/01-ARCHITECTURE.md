@@ -109,12 +109,27 @@ A modular monolith gives:
   that validation). Bearer injection is centralized in `client.ts` —
   every request carries `Authorization: Bearer <token>` when a token is
   stored, and a token-carrying 401 clears the token and flips the app to
-  unauthenticated (no redirects yet — Task 5.4). The login page renders
+  unauthenticated. The login page renders
   at `/fa/login` / `/en/login`. The frontend holds **no authorization
   logic**: roles/permissions are never modeled or inferred client-side
   (backend RBAC is docs/06 §4g). Because the browser now calls the API
   directly, the backend serves CORS from configured origins
   (`CORS_ALLOW_ORIGINS`, no wildcard credentials).
+- **Protected routes & auth-aware navigation (implemented, Phase 5.4):**
+  the `(app)` route group (every business page, both locales) is wrapped
+  once in its layout by a client-side `AuthGate`
+  (`apps/web/components/auth/AuthGate.tsx`); the login page stays public
+  outside the group. Unauthenticated visitors are redirected
+  (locale-preserving, `replace` not `push`) to `/{locale}/login` with a
+  validated `returnTo`; the loading state renders no protected content,
+  so nothing leaks into the server HTML. Because the token lives in
+  `localStorage`, middleware cannot read it — the guard is deliberately
+  client-side, an *authentication boundary in the browser* rather than
+  server-side access control (the httpOnly-cookie/BFF alternative stays
+  a documented future option). The header shows the username plus a
+  logout button; there is **no role/permission-based UI hiding** —
+  authenticated ≠ authorized, and backend RBAC (docs/06 §4g) remains
+  the sole permission enforcement. Details: docs/06 §4i.
 
 ### 3.2 Backend — FastAPI (Python)
 
