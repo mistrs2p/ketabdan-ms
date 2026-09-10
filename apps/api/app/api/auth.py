@@ -6,11 +6,13 @@
 Error semantics (§4b/§4f): every authentication failure is a single
 generic 401 — unknown user, wrong password, inactive account, missing,
 malformed, invalid, or expired token are indistinguishable to callers.
-403 is *not* used here: it is reserved for authorization (Task 5.2).
-No auth failure path may produce a 500 or leak internal details.
+403 is authorization's status (docs/06 §4g, Task 5.2) and never appears
+on these endpoints. No auth failure path may produce a 500 or leak
+internal details.
 
-``get_current_user`` is the dependency Task 5.2 will reuse to protect
-business endpoints — it does no role/permission checks by design.
+``get_current_user`` is the authentication half every protected route
+builds on (via ``app.api.deps.require_permission``, §4g) — it does no
+role/permission checks by design.
 """
 
 from uuid import UUID
@@ -43,7 +45,7 @@ def get_current_user(
     Read Authorization header → validate the Bearer scheme → verify the
     JWT signature and expiration → extract the subject → load the user →
     reject nonexistent or inactive accounts. Role/permission checks are
-    deliberately absent (authorization is Task 5.2).
+    deliberately absent — they live in app.api.deps (docs/06 §4g).
     """
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(

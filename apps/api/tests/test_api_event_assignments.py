@@ -14,11 +14,20 @@ error policy §4b), atomicity, and the explicitly-not-checked TBDs.
 
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Event, EventAssignment, EventResponsibility, Person
+
+
+@pytest.fixture()
+def client(authed_client: TestClient) -> TestClient:
+    """The event-assignment endpoints require permissions (docs/06 §4g) —
+    every test in this module calls them as an admin-privileged user."""
+    return authed_client
+
 
 # A well-formed UUID that matches no row (unknown-but-valid resource).
 GHOST_UUID = "12345678-1234-4123-8123-123456789abc"

@@ -17,6 +17,14 @@ from app.main import app
 from app.models import Role
 
 
+@pytest.fixture()
+def client(authed_client: TestClient) -> TestClient:
+    """The error-policy probes run against protected business routes
+    (docs/06 §4g) as an admin-privileged user, so the policy itself is
+    what is observed — not 401/403 from missing permissions."""
+    return authed_client
+
+
 def test_validation_error_keeps_fastapi_default_shape(
     client: TestClient,
 ) -> None:

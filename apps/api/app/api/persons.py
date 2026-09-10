@@ -3,6 +3,9 @@
 Reads stay direct queries; creation carries real logic (role-code resolution
 plus an atomic write), so the route delegates to ``app.services.persons``
 (docs/06 §3 rule 4) and only translates its errors into HTTP responses.
+
+Protected since docs/06 §4g: reads require ``people:read``, creation
+requires ``people:create``.
 """
 
 from collections.abc import Sequence
@@ -11,9 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.deps import require_permission
 from app.db.session import get_db
 from app.models import Person, PersonRole
 from app.schemas.person import PersonCreate, PersonRead
+from app.services import authz
 from app.services import persons as persons_service
 
 router = APIRouter(prefix="/api", tags=["persons"])
@@ -23,6 +28,7 @@ router = APIRouter(prefix="/api", tags=["persons"])
     "/persons",
     response_model=list[PersonRead],
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_permission(authz.PEOPLE_READ))],
 )
 def list_persons(db: Session = Depends(get_db)) -> Sequence[Person]:
     """List branch members (ordered by name, then id), each with their roles."""
@@ -39,6 +45,7 @@ def list_persons(db: Session = Depends(get_db)) -> Sequence[Person]:
     "/persons",
     response_model=PersonRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(authz.PEOPLE_CREATE))],
 )
 def create_person(
     payload: PersonCreate, db: Session = Depends(get_db)

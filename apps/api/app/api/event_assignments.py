@@ -10,6 +10,9 @@ Reads stay direct queries (docs/06 §3 rule 4): deterministic ordering
 (assignment `id` — no business sort is documented anywhere), with only
 the responsibility eager-loaded because it is the one relation embedded
 in `EventAssignmentRead`.
+
+Protected since docs/06 §4g: reads require ``assignments:read``,
+creation requires ``assignments:create``.
 """
 
 from collections.abc import Sequence
@@ -19,9 +22,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.deps import require_permission
 from app.db.session import get_db
 from app.models import EventAssignment
 from app.schemas.event_assignment import EventAssignmentCreate, EventAssignmentRead
+from app.services import authz
 from app.services import event_assignments as assignments_service
 
 router = APIRouter(prefix="/api", tags=["event-assignments"])
@@ -31,6 +36,7 @@ router = APIRouter(prefix="/api", tags=["event-assignments"])
     "/event-assignments",
     response_model=list[EventAssignmentRead],
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_permission(authz.ASSIGNMENTS_READ))],
 )
 def list_event_assignments(db: Session = Depends(get_db)) -> Sequence[EventAssignment]:
     """List assignments ordered by id — the stable baseline read."""
@@ -47,6 +53,7 @@ def list_event_assignments(db: Session = Depends(get_db)) -> Sequence[EventAssig
     "/event-assignments/{assignment_id}",
     response_model=EventAssignmentRead,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_permission(authz.ASSIGNMENTS_READ))],
 )
 def get_event_assignment(
     assignment_id: UUID, db: Session = Depends(get_db)
@@ -69,6 +76,7 @@ def get_event_assignment(
     "/event-assignments",
     response_model=EventAssignmentRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(authz.ASSIGNMENTS_CREATE))],
 )
 def create_event_assignment(
     payload: EventAssignmentCreate, db: Session = Depends(get_db)
