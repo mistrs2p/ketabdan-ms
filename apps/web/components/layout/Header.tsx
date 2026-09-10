@@ -4,10 +4,12 @@ import { useTranslations } from "next-intl";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MobileNavigation } from "./MobileNavigation";
+import { UserMenu } from "./UserMenu";
 
 // Topbar: mobile nav on the start side, page context in the middle,
-// theme + language controls on the end side. Logical utilities
-// (justify-between, gap) mirror automatically in RTL/LTR.
+// user identity + sign-out and theme/language controls on the end side.
+// Logical utilities (justify-between, gap) mirror automatically in
+// RTL/LTR.
 export function Header() {
   const t = useTranslations("app.header");
 
@@ -18,6 +20,7 @@ export function Header() {
       </div>
       <div className="min-w-0 flex-1 text-sm text-muted-foreground">{t("context")}</div>
       <div className="flex items-center gap-2">
+        <UserMenu />
         <ThemeToggle />
         <LocaleSwitcher />
       </div>

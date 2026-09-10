@@ -17,15 +17,18 @@ import { LoginForm } from "@/components/auth/LoginForm";
 const BASE = "http://api.test";
 const ME = { id: "u-1", username: "smoke-user", active: true };
 
-// next-intl routing hooks: mock at module level (the form pushes to
-// /dashboard after login — we assert the call, not navigation).
-// LocaleSwitcher (rendered inside the form) also uses usePathname and
-// the `routing` locale list.
+// next-intl routing hooks: mock at module level (the form replaces to
+// /dashboard or the sanitized returnTo after login — we assert the
+// call, not navigation). LocaleSwitcher (rendered inside the form)
+// also uses usePathname and the `routing` locale list.
 const pushMock = vi.fn();
+const replaceMock = vi.fn();
 vi.mock("@/i18n/routing", () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
   usePathname: () => "/login",
   routing: { locales: ["fa", "en"], defaultLocale: "fa" },
+  locales: ["fa", "en"],
+  defaultLocale: "fa",
 }));
 
 function renderForm(locale: "fa" | "en") {
@@ -74,11 +77,16 @@ const LOGIN_MESSAGES = {
 
 /** The auth surface the form consumes (provider is not under test here). */
 const loginMock = vi.fn();
+const authStateMock = vi.fn(() => ({
+  login: loginMock,
+  isAuthenticated: false,
+  isLoading: false,
+}));
 vi.mock("@/lib/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth")>();
   return {
     ...actual,
-    useAuth: () => ({ login: loginMock }),
+    useAuth: () => authStateMock(),
   };
 });
 
@@ -86,7 +94,13 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", BASE);
   window.localStorage.clear();
   pushMock.mockClear();
+  replaceMock.mockClear();
   loginMock.mockReset();
+  authStateMock.mockReturnValue({
+    login: loginMock,
+    isAuthenticated: false,
+    isLoading: false,
+  });
 });
 
 afterEach(() => {
@@ -130,7 +144,7 @@ describe("successful login", () => {
     await user.type(screen.getByLabelText(/Password/), "pass-1234");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/dashboard"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -142,7 +156,7 @@ describe("successful login", () => {
     await user.type(screen.getByLabelText(/Username/), "smoke-user");
     await user.type(screen.getByLabelText(/Password/), "pass-1234{Enter}");
 
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/dashboard"));
   });
 });
 
@@ -166,7 +180,7 @@ describe("invalid credentials", () => {
     // The raw backend message must not be the distinguishing surface —
     // the localized generic text is what the user sees.
     expect(alert).toHaveTextContent("Invalid username or password.");
-    expect(pushMock).not.toHaveBeenCalled();
+    expect(replaceMock).not.toHaveBeenCalled();
   });
 
   it("shows the localized fa message on the fa form", async () => {
@@ -252,6 +266,71 @@ describe("loading state", () => {
     await act(async () => {
       resolveLogin(ME);
     });
-    await waitFor(() => expect(pushMock).toHaveBeenCalled());
+    await waitFor(() => expect(replaceMock).toHaveBeenCalled());
+  });
+});
+
+describe("already-authenticated visitor (Task 5.4)", () => {
+  it("redirects to the dashboard once restoration settles", async () => {
+    authStateMock.mockReturnValue({
+      login: loginMock,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    renderForm("en");
+
+    await waitFor(() =>
+      expect(replaceMock).toHaveBeenCalledWith("/dashboard"),
+    );
+  });
+
+  it("does not redirect while the session is still loading", () => {
+    authStateMock.mockReturnValue({
+      login: loginMock,
+      isAuthenticated: false,
+      isLoading: true,
+    });
+    renderForm("en");
+
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("returnTo (Task 5.4)", () => {
+  it("returns to the sanitized returnTo path after login", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/fa/login?returnTo=%2Ffa%2Fevents%2F123",
+    );
+    loginMock.mockResolvedValue(ME);
+    const user = userEvent.setup();
+    renderForm("fa");
+
+    await user.type(screen.getByLabelText(/نام کاربری/), "smoke-user");
+    await user.type(screen.getByLabelText(/رمز عبور/), "pass-1234");
+    await user.click(screen.getByRole("button", { name: "ورود" }));
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/events/123"));
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("falls back to the dashboard when returnTo is unsafe or absent", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/en/login?returnTo=https%3A%2F%2Fevil.example",
+    );
+    loginMock.mockResolvedValue(ME);
+    const user = userEvent.setup();
+    renderForm("en");
+
+    await user.type(screen.getByLabelText(/Username/), "smoke-user");
+    await user.type(screen.getByLabelText(/Password/), "pass-1234");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/dashboard"));
+    expect(replaceMock).not.toHaveBeenCalledWith("https://evil.example");
+    window.history.replaceState(null, "", "/");
   });
 });

@@ -9,6 +9,7 @@
  *                  header for the documented XSS trade-off)
  * - `api.ts`     — login / getCurrentUser / logout API calls
  * - `context.tsx`— the React session provider (client component)
+ * - `returnTo.ts`— safe `returnTo` path validation (Task 5.4)
  *
  * Authorization is NOT modeled here: the server is the source of truth
  * for permissions (docs/01 §4 rule 3); the frontend only knows the
@@ -22,6 +23,7 @@ export {
 } from "./api";
 export { AuthProvider, useAuth } from "./context";
 export type { AuthSession, SessionStatus } from "./context";
+export { sanitizeReturnTo, splitLocalePath } from "./returnTo";
 export {
   saveAccessToken,
   readAccessToken,

@@ -354,5 +354,8 @@
     "networkError": "The service is unreachable right now. Check your connection and try again.",
     "serverError": "Sign-in failed. Try again in a moment.",
     "logout": "Sign out"
+  },
+  "auth": {
+    "sessionLoading": "Restoring your session…"
   }
 }
