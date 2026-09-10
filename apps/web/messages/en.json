@@ -203,6 +203,59 @@
         "description": "This event does not exist or is no longer available.",
         "back": "Back to {page}"
       }
+    },
+    "assignments": {
+      "title": "Assignments",
+      "description": "Who is responsible for what at this event.",
+      "empty": {
+        "title": "No assignments yet",
+        "description": "Assign a person to a responsibility below."
+      },
+      "unknownPerson": "Unknown person",
+      "refreshError": "The list could not be refreshed — it may be out of date.",
+      "responsibility": {
+        "pre_introduction": "Pre-introduction",
+        "welcome_reception": "Welcome / Reception",
+        "technique_execution": "Technique Execution",
+        "persuasion": "Persuasion",
+        "registration": "Registration",
+        "follow_up": "Follow-up"
+      },
+      "approval": {
+        "PENDING": "Pending",
+        "APPROVED": "Approved"
+      },
+      "create": {
+        "title": "Add assignment",
+        "personLabel": "Person",
+        "personPlaceholder": "Select a person…",
+        "personRequired": "A person is required.",
+        "responsibilityLabel": "Responsibility",
+        "responsibilityPlaceholder": "Select a responsibility…",
+        "responsibilityRequired": "A responsibility is required.",
+        "responsibilityHint": "Assignments are created as pending approval.",
+        "submit": "Assign",
+        "submitting": "Assigning…",
+        "success": "Assignment created.",
+        "peopleCount": "{count, plural, one {# person available} other {# people available}}",
+        "noPeople": {
+          "title": "No people available",
+          "description": "Add branch members first — an assignment needs a person."
+        },
+        "error": {
+          "network": "The assignment could not be created. Check that the backend service is running and try again.",
+          "server": "The assignment could not be created. Try again in a moment.",
+          "validation": "The assignment could not be created. Check the selected values and try again."
+        }
+      },
+      "error": {
+        "title": "Could not load assignments",
+        "server": "Assignments are unavailable right now. Try again in a moment."
+      },
+      "peopleError": {
+        "title": "Could not load people",
+        "server": "The assignment form needs the branch members list, which is unavailable right now."
+      }
     }
   },
   "calendar": {
