@@ -341,5 +341,18 @@
       "createEvent": "Add event",
       "viewCalendar": "View calendar"
     }
+  },
+  "login": {
+    "title": "Sign in",
+    "usernameLabel": "Username",
+    "passwordLabel": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "usernameRequired": "Username is required.",
+    "passwordRequired": "Password is required.",
+    "invalidCredentials": "Invalid username or password.",
+    "networkError": "The service is unreachable right now. Check your connection and try again.",
+    "serverError": "Sign-in failed. Try again in a moment.",
+    "logout": "Sign out"
   }
 }

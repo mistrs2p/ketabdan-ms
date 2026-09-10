@@ -11,10 +11,20 @@
  * read at call time so dev/test/prod differ by environment, never by
  * code. Base-URL joining is canonicalized here (trailing slashes are
  * tolerated on either side, never producing `//`).
+ *
+ * Authentication transport (Phase 5.3, docs/06 §4f/§4g): the access
+ * token from `lib/auth/storage` is attached as `Authorization: Bearer`
+ * on every request when one is present — one central mechanism, never
+ * per-call headers in pages/components. When a request that carried a
+ * token comes back 401, the persisted token is cleared and the
+ * registered 401 listeners are notified (the auth provider uses this to
+ * transition to unauthenticated). Public endpoints simply send no
+ * header when no token exists — a malformed empty Bearer is never sent.
  */
 
 import { ApiError, kindForStatus } from "./errors";
 import type { ApiErrorDetail } from "./types";
+import { readAccessToken, clearAccessToken } from "@/lib/auth/storage";
 
 /** Resolved API base URL — trailing slash stripped, exactly once. */
 export function apiBaseUrl(): string {
@@ -39,21 +49,53 @@ export function buildApiUrl(base: string, path: string): string {
   return `${cleanBase}/${cleanPath}`;
 }
 
+// --- 401 session-expiry listeners -------------------------------------------
+//
+// The client must not import React or the auth provider (layering:
+// transport below state). Instead, the provider subscribes here; when a
+// token-carrying request is rejected 401, the stale token is cleared
+// and listeners run so the app-wide auth state flips to unauthenticated
+// (docs/06 §4f — the server invalidated the session; the client only
+// follows). Task 5.4 adds redirects on top; nothing here navigates.
+
+type UnauthorizedListener = () => void;
+
+const unauthorizedListeners = new Set<UnauthorizedListener>();
+
+/** Subscribe to token-carrying 401s (the auth provider's session-reset). */
+export function onUnauthorized(listener: UnauthorizedListener): () => void {
+  unauthorizedListeners.add(listener);
+  return () => unauthorizedListeners.delete(listener);
+}
+
+function handleUnauthorized(): void {
+  clearAccessToken();
+  for (const listener of unauthorizedListeners) {
+    listener();
+  }
+}
+
 async function request<T>(
   path: string,
   init: RequestInit & { method: "GET" | "POST" },
 ): Promise<T> {
+  // Central Bearer injection (§5.3): exactly one place decides. No
+  // token → no header (never "Bearer null" / "Bearer undefined").
+  const token = readAccessToken();
+
   let response: Response;
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.body !== undefined
+        ? { "Content-Type": "application/json" }
+        : {}),
+      ...(init.headers as Record<string, string> | undefined),
+    };
     response = await fetch(buildApiUrl(apiBaseUrl(), path), {
       ...init,
-      headers: {
-        Accept: "application/json",
-        ...(init.body !== undefined
-          ? { "Content-Type": "application/json" }
-          : {}),
-        ...init.headers,
-      },
+      headers,
     });
   } catch (cause) {
     throw new ApiError(
@@ -65,6 +107,13 @@ async function request<T>(
   }
 
   if (!response.ok) {
+    // A request that carried a token and got 401 means the session is
+    // invalid/expired server-side: clear the stale token and notify the
+    // auth state. A 401 on a tokenless request (login failure) leaves
+    // listeners untouched — there was no session to lose.
+    if (response.status === 401 && token) {
+      handleUnauthorized();
+    }
     const detail = await parseErrorDetail(response);
     throw new ApiError(
       kindForStatus(response.status),

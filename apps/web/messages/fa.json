@@ -341,5 +341,18 @@
       "createEvent": "افزودن رویداد",
       "viewCalendar": "مشاهده تقویم"
     }
+  },
+  "login": {
+    "title": "ورود",
+    "usernameLabel": "نام کاربری",
+    "passwordLabel": "رمز عبور",
+    "submit": "ورود",
+    "submitting": "در حال ورود…",
+    "usernameRequired": "نام کاربری الزامی است.",
+    "passwordRequired": "رمز عبور الزامی است.",
+    "invalidCredentials": "نام کاربری یا رمز عبور نادرست است.",
+    "networkError": "سرویس در دسترس نیست. اتصال اینترنت را بررسی کنید و دوباره تلاش کنید.",
+    "serverError": "ورود ناموفق بود. کمی بعد دوباره تلاش کنید.",
+    "logout": "خروج"
   }
 }
