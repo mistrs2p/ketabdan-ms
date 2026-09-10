@@ -46,3 +46,12 @@
 body {
   font-family: var(--font-sans);
 }
+
+/* Visible keyboard focus for every interactive element (links,
+   buttons, inputs, selects) — one global rule using the theme
+   tokens, so it holds in light/dark and RTL/LTR alike. Applies to
+   keyboard focus only (:focus-visible); pointer clicks stay clean. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
