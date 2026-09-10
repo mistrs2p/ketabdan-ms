@@ -277,5 +277,69 @@
       "title": "No events have been added yet",
       "description": "The calendar fills in as branch events are added."
     }
+  },
+  "dashboard": {
+    "description": "A fast operational view of what needs attention.",
+    "loading": "Loading the dashboard…",
+    "metrics": {
+      "sectionLabel": "Summary metrics",
+      "totalPeople": "Total people",
+      "activePeople": "Active people",
+      "upcomingEvents": "Upcoming events",
+      "eventsWithAssignments": "Events with assignments",
+      "eventsWithoutAssignments": "Events without assignments",
+      "totalAssignments": "Total assignments"
+    },
+    "unassigned": {
+      "title": "Events without assignments",
+      "description": "These events have no assigned person yet.",
+      "empty": {
+        "title": "Every event has at least one assignment",
+        "description": "New events appear here until someone is assigned."
+      }
+    },
+    "upcoming": {
+      "title": "Upcoming events",
+      "description": "The nearest planned events.",
+      "assignmentCount": "{count, plural, =0 {No assignments} one {# assignment} other {# assignments}}",
+      "empty": {
+        "title": "No upcoming events",
+        "description": "Future events appear here once they are added."
+      },
+      "error": {
+        "title": "Could not load events",
+        "server": "The events overview is unavailable right now. Try again in a moment."
+      }
+    },
+    "statusSnapshot": {
+      "title": "Events by status",
+      "description": "All events counted by their current status."
+    },
+    "people": {
+      "title": "People",
+      "description": "Branch members at a glance.",
+      "total": "Total",
+      "active": "Active",
+      "inactive": "Inactive",
+      "error": {
+        "title": "Could not load people",
+        "server": "The people overview is unavailable right now. Try again in a moment."
+      }
+    },
+    "eventsError": {
+      "title": "Events overview unavailable",
+      "server": "The events data could not be loaded. Try again in a moment."
+    },
+    "assignmentsError": {
+      "server": "The assignments data could not be loaded, so events cannot be checked for missing assignments. Try again in a moment."
+    },
+    "actions": {
+      "sectionLabel": "Quick actions",
+      "viewPeople": "View people",
+      "createPerson": "Add person",
+      "viewEvents": "View events",
+      "createEvent": "Add event",
+      "viewCalendar": "View calendar"
+    }
   }
 }
