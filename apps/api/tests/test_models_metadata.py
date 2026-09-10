@@ -18,10 +18,17 @@ MVP_TABLES = {
     "event_reports",
 }
 
-# The authentication identity table (Phase 5, docs/06 §4f) sits alongside
-# the seven MVP business tables — deliberately not part of MVP_TABLES,
-# which the tests below use to assert the *business* schema of docs/03.
-AUTH_TABLES = {"users"}
+# The authentication identity table (Phase 5, docs/06 §4f) and the
+# authorization tables (Phase 5.2, docs/06 §4g) sit alongside the seven
+# MVP business tables — deliberately not part of MVP_TABLES, which the
+# tests below use to assert the *business* schema of docs/03.
+AUTH_TABLES = {
+    "users",
+    "application_roles",
+    "permissions",
+    "user_application_roles",
+    "application_role_permissions",
+}
 
 
 def unique_column_names(table_name: str) -> set[str]:

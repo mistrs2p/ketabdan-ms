@@ -7,10 +7,18 @@ live PostgreSQL behavior is additionally exercised by running the
 application against the real database (docs/06, Validation).
 """
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models import Role
+
+
+@pytest.fixture()
+def client(authed_client: TestClient) -> TestClient:
+    """GET /api/roles requires the roles:read permission (docs/06 §4g) —
+    every test in this module calls it as an admin-privileged user."""
+    return authed_client
 
 # The six confirmed roles (docs/03 §5.2) — the same set seeded by
 # Alembic migration 0002.

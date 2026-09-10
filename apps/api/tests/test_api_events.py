@@ -11,11 +11,20 @@ status surfaced as stored.
 
 from datetime import datetime, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Event, EventAssignment
+
+
+@pytest.fixture()
+def client(authed_client: TestClient) -> TestClient:
+    """The events endpoints require permissions (docs/06 §4g) — every
+    test in this module calls them as an admin-privileged user."""
+    return authed_client
+
 
 PLANNED_AT = "2026-09-19T17:00:00+03:30"
 

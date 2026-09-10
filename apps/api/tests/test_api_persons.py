@@ -7,11 +7,19 @@ by Alembic migration 0002, but the endpoints themselves read whatever is in
 the database.
 """
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Person, PersonRole, Role
+
+
+@pytest.fixture()
+def client(authed_client: TestClient) -> TestClient:
+    """The persons endpoints require permissions (docs/06 §4g) — every
+    test in this module calls them as an admin-privileged user."""
+    return authed_client
 
 
 def make_role(code: str, name: str) -> Role:

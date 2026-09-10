@@ -139,9 +139,20 @@ Task 5.1 added the **backend authentication foundation** (docs/06 §4f):
 a `users` table (migration `0004`, separate from `persons`), Argon2id
 password hashing, HS256 JWT access tokens, `POST /api/auth/login` and
 `GET /api/auth/me` (generic 401s, no user enumeration), and the
-`python -m app.create_user` bootstrap CLI — no default account. Business
-routes remain unauthenticated until Task 5.2 (authorization/RBAC), and
-there is no frontend login UI yet.
+`python -m app.create_user` bootstrap CLI — no default account.
+
+Task 5.2 added **backend authorization / RBAC** (docs/06 §4g):
+application roles and permissions as database rows (migration `0005` —
+`application_roles`, `permissions`, and two join tables; the business
+domain roles on `persons` are untouched and separate), stable permission
+codes (`roles:read`, `people:read`, `people:create`, `events:read`,
+`events:create`, `assignments:read`, `assignments:create`), a seeded
+admin/manager/operator matrix, a single `require_permission` dependency
+protecting all nine business routes (401 unauthenticated, 403
+insufficient permission, permissions resolved server-side on every
+request), and the `python -m app.assign_role` operator CLI
+(`create_user` gained `--role`). Business routes are now
+permission-protected; there is no frontend login UI yet (Task 5.3).
 
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark

@@ -1,7 +1,7 @@
 # 06 — Backend API Layer (FastAPI)
 
 **Project:** Ketabdaneh
-**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads, event assignments incl. single-assignment reads), three write endpoints (person, event, and event-assignment creation), the MVP error policy (§4b) established, the EventAssignment approval contract **defined but not implemented** (§4e), and the authentication foundation (§4f — login/me implemented; **authorization/RBAC not implemented**); the API surface is intentionally minimal and grows task by task. **Phase 3 — CLOSED / FROZEN 2026-09-09 (§8).**
+**Document status:** Implementation artifact — read endpoints (roles, persons, events incl. single-event reads, event assignments incl. single-assignment reads), three write endpoints (person, event, and event-assignment creation), the MVP error policy (§4b) established, the EventAssignment approval contract **defined but not implemented** (§4e), the authentication foundation (§4f — login/me), and application authorization / RBAC (§4g — all business routes permission-protected, 401 vs 403 semantics, seeded roles/permissions matrix); the API surface is intentionally minimal and grows task by task. **Phase 3 — CLOSED / FROZEN 2026-09-09 (§8).**
 **Last reviewed:** 2026-09-10
 **Depends on:** [01-ARCHITECTURE.md](01-ARCHITECTURE.md) (communication boundary), [04-BACKEND-PERSISTENCE.md](04-BACKEND-PERSISTENCE.md) (session foundation), [05-DATABASE-MIGRATIONS.md](05-DATABASE-MIGRATIONS.md) (seed data)
 
@@ -35,6 +35,7 @@ apps/api/app/
 ├── api/
 │   ├── __init__.py
 │   ├── auth.py         # auth router: login, me, get_current_user (§4f)
+│   ├── deps.py         # require_permission factory — route protection (§4g)
 │   ├── event_assignments.py  # event-assignments router (POST create)
 │   ├── events.py       # events router (GET list/single, POST create)
 │   ├── persons.py      # persons router
@@ -42,7 +43,8 @@ apps/api/app/
 ├── core/
 │   ├── config.py       # Settings (pydantic-settings; auth vars, §4f)
 │   └── security.py     # all cryptography: Argon2id + JWT (§4f)
-├── create_user.py      # bootstrap CLI: python -m app.create_user (§4f)
+├── assign_role.py      # operator CLI: python -m app.assign_role (§4g)
+├── create_user.py      # bootstrap CLI: python -m app.create_user (§4f, §4g)
 ├── schemas/
 │   ├── __init__.py
 │   ├── auth.py         # LoginRequest, TokenResponse, UserRead (§4f)
@@ -54,6 +56,7 @@ apps/api/app/
 ├── services/
 │   ├── __init__.py
 │   ├── auth.py         # authenticate / issue / verify tokens, create_user (§4f)
+│   ├── authz.py        # permission resolution + role assignment (§4g)
 │   ├── event_assignments.py  # create_event_assignment — reference
 │   │                          #   resolution (§4d)
 │   ├── events.py       # create_event — always-DRAFT invariant (§4c)
@@ -97,24 +100,26 @@ apps/api/app/
 
 ## 4. Endpoints
 
-| Method | Path | Purpose | Notes |
-| --- | --- | --- | --- |
-| GET | `/api/health` | Liveness check | No database involved; works without `DATABASE_URL` |
-| GET | `/api/roles` | List the permanent organizational roles (reference data, seeded by migration `0002`) | Read-only; ordered by `code`; returns `[{id, code, name}]` |
-| GET | `/api/persons` | List branch members with their permanent roles (D-001) | Read-only; ordered by `name`, then `id`; returns `[{id, name, phone, active, roles: [{id, code, name}]}]` |
-| POST | `/api/persons` | Create a branch member, optionally with roles (§4a) | First write endpoint; `201 Created` with the `PersonRead` shape; person + memberships written atomically |
-| GET | `/api/events` | List events — the calendar-oriented read | Ordered by `planned_at`, then `id`; returns `EventRead` items `{id, title, type, planned_at, status}`; `planned_at` is a timezone-aware instant |
-| GET | `/api/events/{event_id}` | Return one event by id | `EventRead`; unknown-but-valid UUID → `404 {"detail": "Event not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
-| POST | `/api/events` | Create an event, always in `DRAFT` (§4c) | `201 Created` with the `EventRead` shape `{id, title, type, planned_at, status}`; timezone-aware `planned_at` required |
-| GET | `/api/event-assignments` | List assignments — the stable baseline read | Ordered by `id`; returns `EventAssignmentRead` items (responsibility embedded, event/person referenced by id); no pagination/filter/search (deliberately) |
-| GET | `/api/event-assignments/{assignment_id}` | Return one assignment by id | `EventAssignmentRead`; unknown-but-valid UUID → `404 {"detail": "Event assignment not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
-| POST | `/api/event-assignments` | Create an assignment (§4d) | `201 Created` with the `EventAssignmentRead` shape `{id, event_id, person_id, responsibility: {id, code, name, active}, approval_status}` — always `PENDING`; unknown event/person UUID → 404, unknown responsibility code → 422 |
-| POST | `/api/auth/login` | Verify credentials, issue an access token (§4f) | `200 {access_token, token_type: "bearer", expires_in}`; any failure → generic `401` (no user enumeration) |
-| GET | `/api/auth/me` | The authenticated identity (§4f) | Requires `Authorization: Bearer <token>`; returns `{id, username, active}` (never `password_hash`); any token failure → generic `401` |
+| Method | Path | Purpose | Permission (§4g) | Notes |
+| --- | --- | --- | --- | --- |
+| GET | `/api/health` | Liveness check | — public | No database involved; works without `DATABASE_URL` |
+| GET | `/api/roles` | List the permanent organizational roles (reference data, seeded by migration `0002`) | `roles:read` | Read-only; ordered by `code`; returns `[{id, code, name}]` |
+| GET | `/api/persons` | List branch members with their permanent roles (D-001) | `people:read` | Read-only; ordered by `name`, then `id`; returns `[{id, name, phone, active, roles: [{id, code, name}]}]` |
+| POST | `/api/persons` | Create a branch member, optionally with roles (§4a) | `people:create` | First write endpoint; `201 Created` with the `PersonRead` shape; person + memberships written atomically |
+| GET | `/api/events` | List events — the calendar-oriented read | `events:read` | Ordered by `planned_at`, then `id`; returns `EventRead` items `{id, title, type, planned_at, status}`; `planned_at` is a timezone-aware instant |
+| GET | `/api/events/{event_id}` | Return one event by id | `events:read` | `EventRead`; unknown-but-valid UUID → `404 {"detail": "Event not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
+| POST | `/api/events` | Create an event, always in `DRAFT` (§4c) | `events:create` | `201 Created` with the `EventRead` shape `{id, title, type, planned_at, status}`; timezone-aware `planned_at` required |
+| GET | `/api/event-assignments` | List assignments — the stable baseline read | `assignments:read` | Ordered by `id`; returns `EventAssignmentRead` items (responsibility embedded, event/person referenced by id); no pagination/filter/search (deliberately) |
+| GET | `/api/event-assignments/{assignment_id}` | Return one assignment by id | `assignments:read` | `EventAssignmentRead`; unknown-but-valid UUID → `404 {"detail": "Event assignment not found"}` (§4b rule 4); malformed UUID → FastAPI's default 422 |
+| POST | `/api/event-assignments` | Create an assignment (§4d) | `assignments:create` | `201 Created` with the `EventAssignmentRead` shape `{id, event_id, person_id, responsibility: {id, code, name, active}, approval_status}` — always `PENDING`; unknown event/person UUID → 404, unknown responsibility code → 422 |
+| POST | `/api/auth/login` | Verify credentials, issue an access token (§4f) | — public | `200 {access_token, token_type: "bearer", expires_in}`; any failure → generic `401` (no user enumeration) |
+| GET | `/api/auth/me` | The authenticated identity (§4f) | — authenticated only | Requires `Authorization: Bearer <token>`; returns `{id, username, active}` (never `password_hash`); any token failure → generic `401`; no permission required (§4g) |
 
-The business routes above (health, roles, persons, events,
-event-assignments) remain **unauthenticated** in Task 5.1 — protecting
-them is Task 5.2's scope (§4f status note).
+Every business route above (roles, persons, events, event-assignments) is
+**permission-protected** since Task 5.2 (§4g): no token → `401`, valid token
+without the required permission → `403`. `/api/health` and
+`POST /api/auth/login` stay public; `GET /api/auth/me` requires
+authentication but no permission.
 
 Roles are **read-only by design**: the six rows are migration-owned reference
 data (docs/05 §5a). No create/update/delete endpoints exist for them —
@@ -578,12 +583,11 @@ the TBDs above.
 
 ## 4f. Authentication Foundation (implemented — Phase 5, Task 5.1)
 
-**Status: authentication only.** Who a caller *is* — login, token
-verification, `GET /api/auth/me`. **Authorization / RBAC is NOT
-implemented**: no business endpoint checks identity or roles yet, and
-403 is reserved for that future task (5.2). All ten Phase 3 routes
-(§8) plus `/api/health` remain callable without a token, exactly as
-before — protecting them is Task 5.2's scope, applied systematically.
+**Status: authentication only — *who a caller is*.** Login, token
+verification, `GET /api/auth/me`. Task 5.2 (§4g) built authorization on
+top of this foundation without changing any of its primitives: hashing,
+token issuance/verification, the login/me endpoints, and the generic-401
+semantics below are exactly as shipped in 5.1.
 
 ### Identity model — decisions
 
@@ -647,8 +651,8 @@ before — protecting them is Task 5.2's scope, applied systematically.
 success: `{"id", "username", "active"}` — the public projection of a
 User; `password_hash` is never in any response.
 
-**Request header format** for authenticated calls (today only `/me`;
-Task 5.2 extends it to business endpoints):
+**Request header format** for authenticated calls (all protected business
+routes since Task 5.2, §4g):
 
 ```
 Authorization: Bearer <access_token>
@@ -667,8 +671,8 @@ token, malformed token, wrong signature, or expired token:
 This is deliberate user-enumeration protection (unknown-user and
 wrong-password responses are byte-identical; the unknown-user path also
 performs a dummy Argon2 verification so timing does not leak account
-existence). `403` is **not** used anywhere yet — reserved for
-authorization (Task 5.2). No auth failure produces a 500 or leaks
+existence). Authorization denials are never 401 — they are 403, defined
+in §4g. No auth failure produces a 500 or leaks
 internal exception details; the password policy and duplicate-username
 errors exist only in the bootstrap path, not in any HTTP response.
 
@@ -683,6 +687,10 @@ cd apps/api
 python -m app.create_user <username>     # prompts for the password twice
 ```
 
+Since Task 5.2 the same CLI accepts `--role <code>` to grant an
+application role at creation (§4g) — without it the user is created
+unprivileged.
+
 The password is read via `getpass` — never a command-line argument,
 never written to logs or output (only the username and id are echoed).
 Re-running with an existing username fails cleanly and never resets the
@@ -696,18 +704,174 @@ atomically.
 | --- | --- |
 | `app/core/security.py` | Hashing + JWT primitives (all crypto in one module) |
 | `app/services/auth.py` | HTTP-free domain logic: authenticate, issue/verify tokens, create_user |
-| `app/api/auth.py` | Router + `get_current_user` dependency (reused by Task 5.2) |
+| `app/api/auth.py` | Router + `get_current_user` dependency (reused by §4g) |
 | `app/schemas/auth.py` | `LoginRequest`, `TokenResponse`, `UserRead` (no hash) |
 | `app/models/user.py` | `User` ORM model |
-| `app/create_user.py` | Bootstrap CLI |
+| `app/create_user.py` | Bootstrap CLI (with `--role`, §4g) |
 | `alembic/versions/0004_create_users_table.py` | Migration |
+
+## 4g. Authorization & Permissions — RBAC (implemented — Phase 5, Task 5.2)
+
+**Status: authorization — *what a caller may do*.** Every business route
+requires a permission; the check is a composable FastAPI dependency;
+roles, permissions, and their mapping are database rows seeded by
+migration `0005`. No policy engine, no per-route ad-hoc logic.
+
+### Authentication vs. authorization
+
+| Question | Layer | Failure status | Detail |
+| --- | --- | --- | --- |
+| Who is calling? | Authentication (§4f) | `401` | `"Not authenticated"` (token paths) / `"Invalid username or password"` (login) |
+| May they do this? | Authorization (this section) | `403` | `"Not authorized"` |
+
+An authorization failure is **never** 401: a valid, active,
+authenticated user who lacks the required permission gets 403. A request
+with no/invalid/expired token or an inactive user gets 401 before any
+permission is consulted — the two never mix. The 403 detail is a single
+generic message that never names the missing permission, mirroring the
+§4f anti-enumeration discipline.
+
+### Four role concepts — keep them apart
+
+| Concept | Table | Meaning | Phase |
+| --- | --- | --- | --- |
+| **User** | `users` | A login identity (who can authenticate, §4f) | 5.1 |
+| **Person** | `persons` | A business entity — a branch member | 3 (frozen) |
+| **ApplicationRole** | `application_roles` | An *authorization* role held by a User (admin/manager/operator) | 5.2 |
+| **DomainRole** | `roles` | A *business* role of a Person (learner/supporter/coach/teacher/referrer/manager, D-001) | 3 (frozen) |
+
+The Phase 3 domain roles on `persons`/`roles` (0002 seeds) are **not**
+authorization roles and were not touched: a Person being a domain
+"manager" grants no permission, and an application "manager" role says
+nothing about any Person. There is deliberately **no User↔Person foreign
+key** — linking a login to a branch member is future work with its own
+TBDs, and the permission system never consults `persons`. The name
+collision between the domain role `manager` and the application role
+`manager` is unfortunate but the concepts live in different tables and
+different layers.
+
+### Model (migration `0005`)
+
+```
+users ──< user_application_roles >── application_roles ──< application_role_permissions >── permissions
+```
+
+- `application_roles` — code (unique), name (unique): admin, manager,
+  operator.
+- `permissions` — code (unique), name (unique): exactly one row per
+  capability the API offers (below).
+- `user_application_roles` — composite PK `(user_id, application_role_id)`;
+  user FK CASCADE (deleting a user drops their grants), role FK RESTRICT.
+- `application_role_permissions` — composite PK `(application_role_id,
+  permission_id)`; role FK CASCADE, permission FK RESTRICT.
+- Both joins follow the `person_roles` pattern: immutable rows
+  (`created_at` only), subject-side CASCADE, target-side RESTRICT,
+  explicit index on the non-leading FK column.
+
+A User ↔ ApplicationRole is many-to-many (a user may hold several
+roles); effective permissions are the **union** across all held roles.
+
+### Permission codes — exactly the current API, nothing speculative
+
+Stable machine codes, one per capability the API actually offers today
+(constants in `app/services/authz.py`, rows seeded by `0005`):
+
+`roles:read`, `people:read`, `people:create`, `events:read`,
+`events:create`, `assignments:read`, `assignments:create`.
+
+No update/delete codes exist because those endpoints do not exist; no
+future permission is pre-created. Route modules reference the constants
+(`authz.EVENTS_READ`, …) — permission strings never appear as scattered
+literals in business code.
+
+### The seeded matrix (and why)
+
+| Role | Permissions | Rationale |
+| --- | --- | --- |
+| admin | all 7 | The privileged bootstrap role; future administrative capabilities land here |
+| manager | all 7 | The primary business user — full current surface |
+| operator | all except `people:create` (6) | Runs day-to-day operations — the system's purpose is the branch running while the manager is absent (docs/00 §1–2) — but does not manage the member roster |
+
+Admin and manager hold an identical set *today*; they are conceptually
+distinct roles, not one role with two names — administrative permissions
+that arrive in later tasks attach to admin only. The single deliberate
+difference now is operator lacking `people:create`.
+
+Seeds follow the 0002/0003 conventions: hard-coded stable UUIDs,
+`ON CONFLICT DO NOTHING` inserts (re-execution cannot duplicate or
+clobber), downgrade drops only the tables 0005 created (`users` is
+untouched), audit timestamps left to database defaults.
+
+### Route protection — one dependency, applied per route
+
+`app/api/deps.py` provides the single factory:
+
+```python
+require_permission(permission)   # → FastAPI dependency
+```
+
+Routes declare it in the decorator, handlers stay untouched:
+
+```python
+@router.get("/events", dependencies=[Depends(require_permission(authz.EVENTS_READ))])
+```
+
+Semantics inside the dependency: `get_current_user` (§4f) runs first —
+past it, the caller is authenticated and active; then the permission is
+resolved **server-side from the database** (`authz.user_has_permission`)
+— never from the token payload, never from any client-provided value, so
+revoking a role takes effect on the very next request. Public
+(`GET /api/health`, `POST /api/auth/login`) and authenticated-only
+(`GET /api/auth/me`) routes declare no permission dependency.
+
+### Bootstrap and role assignment (CLI only — no HTTP endpoint)
+
+There is **no default account, no well-known password, and no silent
+admin**. Users and grants are created by operators on the server:
+
+```bash
+cd apps/api
+# Create a user and grant a role in one step (role validated before the
+# password prompt; password via getpass, never an argument):
+python -m app.create_user <username> --role admin
+# Grant a role to an existing user / list roles and holders:
+python -m app.assign_role <username> <role_code>
+python -m app.assign_role --list
+```
+
+`assign_role` is explicit: unknown user/role fail loudly (exit 1);
+re-granting an already-held role is a friendly no-op (exit 0), never a
+duplicate row. `create_user` without `--role` creates an unprivileged
+user (zero permissions — can log in and call `/me`, nothing else);
+granting a role is always a separate, visible operator action. The
+service layer behind both (`app/services/authz.py:
+assign_application_role`) is the only grant path.
+
+### Extending (no code changes needed for new grants)
+
+Adding a user's role, a role's permissions, or a whole new role is data
+— insert rows (a migration for reference data, the CLI for grants).
+Adding a *new capability* (new endpoint) is the one case that touches
+code: define the constant in `authz`, seed its row, and attach the
+dependency — the model itself never changes.
+
+### Where the code lives
+
+| File | Role |
+| --- | --- |
+| `app/services/authz.py` | Permission constants; union resolution; role assignment (HTTP-free) |
+| `app/api/deps.py` | `require_permission` factory — the only protection mechanism |
+| `app/models/application_role.py`, `permission.py`, `user_application_role.py`, `application_role_permission.py` | ORM models |
+| `app/assign_role.py`, `app/create_user.py` | Operator/bootstrap CLIs |
+| `alembic/versions/0005_add_application_authorization_tables.py` | Tables + seed matrix |
 
 ## 5. Tests
 
 The API test files (`tests/test_api_health.py`, `tests/test_api_roles.py`,
 `tests/test_api_persons.py`,
 `tests/test_api_events.py`, `tests/test_api_event_assignments.py`,
-`tests/test_api_error_policy.py`, `tests/test_api_auth.py`) exercise the
+`tests/test_api_error_policy.py`, `tests/test_api_auth.py`,
+`tests/test_api_authz.py`) exercise the
 full HTTP stack — routing, dependency injection, response serialization —
 with FastAPI's `TestClient`. The error-policy tests lock the status codes
 and body shapes documented in §4b; the assignment tests additionally lock
@@ -719,6 +883,21 @@ indistinguishable generic 401s (wrong password / unknown user / inactive
 / missing / malformed / wrong-signature / expired / deleted-user token),
 the no-hash `/me` projection, token claims, health staying public, and
 the bootstrap service rules (duplicate username, password policy).
+The authorization tests (`tests/test_api_authz.py`) lock the §4g
+contract: the full 401/403 matrix across all nine protected business
+routes (no token / malformed / expired / inactive → 401; no-roles and
+wrong-permission users → 403 with the generic detail), the seeded
+role/permission/matrix shape (loaded from the 0005 migration's own
+constants, so tests and database cannot drift), multiple roles per user
+with unioned permissions, operator's single deliberate denial
+(`people:create`), the role-assignment service rules, and the
+public/authenticated-only routes staying as they were.
+Since Task 5.2 the business-endpoint tests run through an
+admin-authenticated client (`authed_client` fixture in conftest.py);
+`tests/test_authz_seed_migration.py` runs the real migration chain
+against a disposable PostgreSQL database (the test_seed_migration.py
+pattern) to verify upgrade seeds, seed idempotency, and
+downgrade/re-upgrade of the authorization tables.
 The shared `client` fixture
 (conftest.py) overrides `get_db` with the in-memory SQLite session, which
 uses `StaticPool` + `check_same_thread=False` because TestClient runs the
@@ -734,25 +913,30 @@ From `apps/api` (venv active, PostgreSQL running):
 ```bash
 python -m pytest                 # all tests, including API tests (SQLite)
 python -m app.db.check           # real database connectivity
-python -m app.create_user <name> # bootstrap an auth user (§4f; prompts)
-uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
-                                 #       POST /api/persons, GET /api/persons,
-                                 #       POST /api/events, GET /api/events,
-                                 #       GET /api/events/{event_id},
+python -m app.create_user <name> --role admin   # bootstrap a user + grant (§4f, §4g)
+python -m app.assign_role --list                # roles and holders (§4g)
+uvicorn app.main:app --port 8000 # then: GET /api/health (public),
+                                 #       GET /api/roles without a token → 401,
+                                 #       POST /api/auth/login → token (§4f),
+                                 #       then with Authorization: Bearer <token>:
+                                 #       GET /api/roles, POST /api/persons,
+                                 #       GET /api/persons, POST /api/events,
+                                 #       GET /api/events, GET /api/events/{event_id},
                                  #       POST /api/event-assignments,
                                  #       GET /api/event-assignments,
                                  #       GET /api/event-assignments/{assignment_id},
-                                 #       POST /api/auth/login (§4f),
-                                 #       GET /api/auth/me with the token (§4f)
+                                 #       GET /api/auth/me (§4f); a token for a
+                                 #       user without the required permission → 403
 ```
 
 ## 7. Out of Scope (unchanged TBDs)
 
-- **Authorization — TBD-A13/A11; not implemented.** The authentication
-  foundation (§4f) is implemented, but no route *requires* identity yet;
-  Task 5.2 enforces authentication on business routes and decides
-  role/permission checks. When that lands, it will be enforced inside
-  this layer (docs/01 §4).
+- **Authorization (A13) — implemented (Task 5.2, §4g).** Application
+  RBAC protects all business routes with the 401/403 semantics of §4g.
+  Still open (A11, deliberately not invented here): the *mapping* of
+  which real-world branch positions get which application roles is an
+  operational decision for the branch, not a code decision; fine-grained
+  per-branch or per-person scoping remains future work.
 - Write endpoints: person creation (§4a), event creation (§4c), and
   event-assignment creation plus its list/single reads (§4d) are
   implemented. **Not implemented** (deliberately): assignment
@@ -765,7 +949,10 @@ uvicorn app.main:app --port 8000 # then: GET /api/health, GET /api/roles,
   own task), reports (D19/A9), remaining person operations (update,
   deactivate, delete), and event status transitions (D7/D23) — each
   carrying its open TBDs. Roles stay read-only by
-  design (§4). Pagination conventions remain open (docs/01 §4 TBD T4);
+  design (§4). There is **no HTTP endpoint** for role assignment or
+  user management — the CLIs of §4g are the only grant path (an
+  admin-facing API is future work). Pagination conventions remain open
+  (docs/01 §4 TBD T4);
   the error format is **defined** (§4b) and the reserved 409 row activates
   with its first endpoint.
 - OpenAPI → TypeScript type generation for the frontend (TBD T3).
@@ -819,6 +1006,10 @@ sound; this record is the final state at freeze.
   frozen Phase 3 business surface and remain unchanged. Task 5.1 added
   two auth routes outside it — `POST /api/auth/login` and
   `GET /api/auth/me` (§4f) — without modifying any frozen route.
+  Task 5.2 then wrapped all nine frozen business routes (every route
+  above except `GET /api/health`) in the §4g permission dependency —
+  route paths, handlers, and response contracts untouched; only the
+  decorator gained `dependencies=[...]`.
 
 ### Intentionally NOT in Phase 3 (later phases/tasks)
 
