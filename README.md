@@ -118,24 +118,31 @@ The web app is now available at http://localhost:3000.
 
 ## Current Project Status
 
-**EventAssignment read API stage.** The repository contains the runnable
-application skeletons, local development infrastructure, the approved domain
-model and database schema design
+**Phase 4 (Frontend) complete.** The repository contains the runnable
+full-stack application: local development infrastructure, the approved
+domain model and database schema design
 ([docs/02](docs/02-DOMAIN-MODEL.md), [docs/03](docs/03-DATABASE-SCHEMA.md)),
 the SQLAlchemy ORM persistence foundation
 ([docs/04](docs/04-BACKEND-PERSISTENCE.md)), Alembic migrations with the six
 confirmed roles and six initial event responsibilities seeded
-([docs/05](docs/05-DATABASE-MIGRATIONS.md)), and the first business
-endpoints — `GET /api/roles`, `GET /api/persons`, `POST /api/persons`,
-`GET /api/events` (calendar-oriented list), `GET /api/events/{event_id}`
-(single event), `POST /api/events` (event creation, always `DRAFT`),
-`GET /api/event-assignments` (assignment list),
-`GET /api/event-assignments/{assignment_id}` (single assignment), and
-`POST /api/event-assignments` (assignment creation, always `PENDING`) —
-plus the API error policy and the EventAssignment approval contract
-(defined, not implemented) ([docs/06](docs/06-BACKEND-API.md)). The
-remaining business APIs and
-UI features follow as the open domain questions
+([docs/05](docs/05-DATABASE-MIGRATIONS.md)), and the frozen Phase 3 backend
+API ([docs/06](docs/06-BACKEND-API.md)) — exactly 10 routes:
+`GET /api/health`, `GET /api/roles`, `GET /api/persons`, `POST /api/persons`,
+`GET /api/events`, `GET /api/events/{event_id}`, `POST /api/events`,
+`GET /api/event-assignments`,
+`GET /api/event-assignments/{assignment_id}`, and
+`POST /api/event-assignments` — plus the API error policy and the
+EventAssignment approval contract (defined, not implemented).
+
+On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
+bilingual (fa/en) locale routing with full RTL/LTR support, light/dark
+theming, the typed API client layer (`apps/web/lib/api/`), and the
+operational screens — People list / create / detail, Events list / create /
+detail, weekly Calendar (read-only visualization), event Assignments
+(read/create) inside Event detail, and the manager Dashboard (operational
+overview built from the existing list APIs). No dashboard backend endpoint
+was added. The remaining business APIs and UI features (tasks, reports,
+approval workflow, availability, auth) follow as the open domain questions
 ([docs/00](docs/00-PROJECT-CONTEXT.md) §7) are resolved.
 
 ## Conventions

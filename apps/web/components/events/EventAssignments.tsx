@@ -91,7 +91,7 @@ export function EventAssignments({
         <div className="flex w-full flex-col gap-3 lg:flex-1">
           {assignments.length === 0 ? (
             <div
-              className="flex flex-col gap-1 rounded-lg border border-dashed border-border p-6 text-center"
+              className="flex flex-col gap-1 rounded-lg border border-dashed border-border bg-surface p-6 text-center"
               role="status"
             >
               <p className="text-sm font-medium">{t("empty.title")}</p>

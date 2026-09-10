@@ -1,4 +1,5 @@
-import { setRequestLocale } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
+import type { Metadata } from "next";
 import {
   getEvent,
   getPersons,
@@ -15,6 +16,15 @@ type Props = { params: Promise<{ locale: string; eventId: string }> };
 
 // Live backend data — render per request, never at build time.
 export const dynamic = "force-dynamic";
+
+// Tab title — the section name (the event's own title is only known
+// after the fetch inside the page render; a metadata-time fetch would
+// duplicate it for no operational value).
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { locale } = await params;
+  const t = await getTranslations({ locale, namespace: "app.pages.events" });
+  return { title: t("title") };
+}
 
 // Event detail. The server fetches everything the screen needs once:
 // the event itself (GET /api/events/{event_id}), the assignments
