@@ -41,7 +41,8 @@ apps/api/app/
 │   ├── persons.py      # persons router
 │   └── roles.py        # one router module per resource
 ├── core/
-│   ├── config.py       # Settings (pydantic-settings; auth vars, §4f)
+│   ├── config.py       # Settings (pydantic-settings; auth vars §4f,
+│   │                   #   CORS_ALLOW_ORIGINS §4h)
 │   └── security.py     # all cryptography: Argon2id + JWT (§4f)
 ├── assign_role.py      # operator CLI: python -m app.assign_role (§4g)
 ├── create_user.py      # bootstrap CLI: python -m app.create_user (§4f, §4g)
@@ -61,7 +62,8 @@ apps/api/app/
 │   │                          #   resolution (§4d)
 │   ├── events.py       # create_event — always-DRAFT invariant (§4c)
 │   └── persons.py      # create_person — first service (HTTP-free domain logic)
-└── main.py             # FastAPI app: include_router() + /api/health
+└── main.py             # FastAPI app: CORS middleware (§4h) + include_router()
+                       #   + /api/health
 ```
 
 ## 3. Conventions
@@ -865,6 +867,56 @@ dependency — the model itself never changes.
 | `app/assign_role.py`, `app/create_user.py` | Operator/bootstrap CLIs |
 | `alembic/versions/0005_add_application_authorization_tables.py` | Tables + seed matrix |
 
+## 4h. Frontend Authentication Integration (implemented — Phase 5, Task 5.3)
+
+**Status: the web app now consumes §4f/§4g as a browser client.** The
+backend contract is unchanged — §4f's endpoints and §4g's protection are
+exactly as shipped. What 5.3 added is the client side
+(`apps/web/lib/auth/`) plus one server-side enabler: CORS.
+
+### What the frontend does
+
+| Concern | Decision |
+| --- | --- |
+| Login page | `/fa/login` and `/en/login` (default locale fa; full RTL/LTR + theming like every other page). Client-side validation is *required-fields only*; everything else stays backend-owned. |
+| Token storage | `localStorage` (`ketabdaneh.auth.access_token`) — an **MVP client-token strategy, not XSS-safe storage**. `lib/auth/storage.ts` documents this explicitly: a future httpOnly-cookie/BFF approach may provide stronger protection. The password is never persisted anywhere. |
+| Bearer injection | Centralized in `lib/api/client.ts` — one place attaches `Authorization: Bearer <token>` when a token is stored. No per-component headers; no token means no header (never a malformed `Bearer null`). |
+| Session state | `AuthProvider` (`lib/auth/context.tsx`) exposes `{user, isAuthenticated, isLoading, login, logout, refreshUser}`. Restoration is exactly-once per mount: on load, a stored token triggers **one** `GET /api/auth/me` — a token alone never renders authenticated UI without that validation. Network failure during restore keeps the token (a refresh retries); a 401 clears it. |
+| 401 handling | A token-carrying request rejected 401 → the client clears the stored token and the provider flips to unauthenticated. A tokenless 401 (the login attempt itself) clears nothing. No retry loops. |
+| Logout semantics | Client-side session termination only — the stored token is removed and the session state reset. **The backend has no token-revocation endpoint; none was invented.** Until one exists, a logged-out token remains technically valid server-side until expiry (60 min). |
+| Error display | The §4f anti-enumeration rule is preserved client-side: one generic localized message for 401 (fa: «نام کاربری یا رمز عبور نادرست است.», en: "Invalid username or password."), a separate network-failure message, and no raw backend detail is ever shown. |
+| Authorization | **None in the frontend.** The client models only `{id, username, active}` from `/me`. No roles, no permissions, no inference — the server stays the source of truth (§4g). |
+
+### CORS (the one backend change)
+
+Until 5.3 every browser page called the API from *server* code (SSG/SSR
+fetches), which is same-machine and CORS-exempt. Client-side auth made
+the browser itself a cross-origin caller (dev: frontend `:3000`, API
+`:8000`), so the API now runs `CORSMiddleware` with an explicit
+allow-list: `CORS_ALLOW_ORIGINS` (comma-separated; defaults to the two
+web dev origins; empty disables the middleware). `allow_credentials` is
+False — authentication is a Bearer header, not cookies, so no
+wildcard-credential combination exists.
+
+### What is deliberately *not* in 5.3 (Task 5.4 scope)
+
+- No protected routes and no route redirects — an unauthenticated user
+  can still open existing pages (their data fetches will 401).
+- No auth-aware navigation (no logout button in the nav, no user menu).
+- No token refresh mechanism (the token simply expires; the user
+  re-logs).
+
+### Where the code lives
+
+| File | Role |
+| --- | --- |
+| `apps/web/lib/auth/{types,storage,api,context}.ts(x)`, `index.ts` | Contract types, token storage, login/me/logout calls, session provider |
+| `apps/web/lib/api/client.ts` | Central Bearer injection + 401 token-clear/listener mechanism |
+| `apps/web/app/[locale]/login/page.tsx`, `apps/web/components/auth/LoginForm.tsx` | The login page and its client form |
+| `apps/web/tests/auth-{storage,api,provider}.test.*`, `tests/login-form.test.tsx` | Unit/component tests (vitest + testing-library) |
+| `app/main.py`, `app/core/config.py` | CORS middleware + `CORS_ALLOW_ORIGINS` setting |
+
+
 ## 5. Tests
 
 The API test files (`tests/test_api_health.py`, `tests/test_api_roles.py`,
@@ -926,7 +978,9 @@ uvicorn app.main:app --port 8000 # then: GET /api/health (public),
                                  #       GET /api/event-assignments,
                                  #       GET /api/event-assignments/{assignment_id},
                                  #       GET /api/auth/me (§4f); a token for a
-                                 #       user without the required permission → 403
+                                 #       user without the required permission → 403;
+                                 #       OPTIONS preflight from the web origin
+                                 #       (Origin: http://localhost:3000) → 2xx (§4h)
 ```
 
 ## 7. Out of Scope (unchanged TBDs)

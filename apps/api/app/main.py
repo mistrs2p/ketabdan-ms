@@ -1,13 +1,29 @@
 import app.models  # noqa: F401 — registers all ORM models on Base.metadata
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.event_assignments import router as event_assignments_router
 from app.api.events import router as events_router
 from app.api.persons import router as persons_router
 from app.api.roles import router as roles_router
+from app.core.config import get_settings
 
 app = FastAPI(title="Ketabdaneh API")
+
+# Browser clients (the web app's client-side auth and business calls,
+# Phase 5.3) are cross-origin in development (frontend :3000, API :8000).
+# Allowed origins come from settings (CORS_ALLOW_ORIGINS) — never a
+# wildcard with credentials.
+_settings = get_settings()
+if _settings.cors_origins_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_settings.cors_origins_list,
+        allow_credentials=False,  # auth is a Bearer header, not cookies
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept"],
+    )
 
 app.include_router(auth_router)
 app.include_router(roles_router)

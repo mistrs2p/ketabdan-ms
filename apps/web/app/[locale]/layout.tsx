@@ -4,6 +4,7 @@ import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { routing } from "@/i18n/routing";
 import type { Locale } from "@/i18n/routing";
+import { AuthProvider } from "@/lib/auth";
 import { themeInitScript } from "@/theme-init";
 import "../globals.css";
 export const metadata: Metadata = {
@@ -43,7 +44,11 @@ export default async function LocaleLayout({
       </head>
       <body>
         <NextIntlClientProvider messages={messages}>
-          {children}
+          {/* Auth session provider (Phase 5.3) — nested inside the intl
+              provider so the login UI can translate; every page, client
+              or server, renders beneath it. Client component; children
+              stay server-rendered where they were before. */}
+          <AuthProvider>{children}</AuthProvider>
         </NextIntlClientProvider>
       </body>
     </html>

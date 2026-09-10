@@ -114,7 +114,9 @@ npm install
 npm run dev
 ```
 
-The web app is now available at http://localhost:3000.
+The web app is now available at http://localhost:3000 (the login page is
+at `/fa/login` / `/en/login`). Unit/component tests (vitest +
+testing-library, browser DOM via jsdom): `npm test`.
 
 ## Current Project Status
 
@@ -153,6 +155,22 @@ insufficient permission, permissions resolved server-side on every
 request), and the `python -m app.assign_role` operator CLI
 (`create_user` gained `--role`). Business routes are now
 permission-protected; there is no frontend login UI yet (Task 5.3).
+
+Task 5.3 added **frontend authentication** (docs/06 §4h): the web app's
+browser code now consumes the auth backend — a login page at
+`/fa/login`/`/en/login` (bilingual, themed, generic 401 messaging),
+`lib/auth/` (contract types, token storage, login/me/logout calls, and
+the `AuthProvider` session state that restores exactly once via
+`/api/auth/me` — a token alone never renders authenticated UI), central
+Bearer injection in the shared API client, and 401-driven session
+clearing. The token is kept in `localStorage` — an explicitly documented
+MVP trade-off (not XSS-safe; httpOnly-cookie/BFF is the future option);
+logout is client-side only (the backend has no revocation endpoint).
+The frontend contains **no authorization logic** — roles/permissions
+stay server-side. The API now also serves CORS from a configured
+allow-list (`CORS_ALLOW_ORIGINS`) since the browser calls it directly.
+Protected routes, auth-aware navigation, and redirect logic are Task 5.4
+and are **not implemented yet**.
 
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark

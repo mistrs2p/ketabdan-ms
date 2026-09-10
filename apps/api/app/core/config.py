@@ -32,6 +32,24 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
+    # --- Cross-origin browser access (Phase 5.3) ---------------------------
+    # The web app's browser code calls this API directly (auth login, /me,
+    # authenticated business calls), so the API must answer CORS preflights
+    # from the frontend origin. Comma-separated origins; production sets its
+    # real frontend origin(s) here. Empty string disables CORS entirely.
+    cors_allow_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000"
+    )
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parsed non-empty origins from `cors_allow_origins`."""
+        return [
+            origin.strip()
+            for origin in self.cors_allow_origins.split(",")
+            if origin.strip()
+        ]
+
     # --- Authentication (Phase 5; see .env.example) ----------------------
     # The secret MUST come from the environment — the placeholder default
     # below is intentionally unsafe and exists only so the application can

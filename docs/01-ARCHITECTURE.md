@@ -95,6 +95,26 @@ A modular monolith gives:
   `health`) exporting plain async functions. API modules contain no UI,
   state, or business decisions (§3.1 rules above). See
   `apps/web/.env.example` for configuration.
+- **Frontend authentication (implemented, Phase 5.3):** a client auth
+  module in `apps/web/lib/auth/` — `types.ts` (login/me contract types
+  only; no password hashes or backend internals), `storage.ts` (the
+  access token in `localStorage` — an **MVP client-token strategy, not
+  XSS-safe storage**; a future httpOnly-cookie/BFF approach may provide
+  stronger protection), `api.ts` (`login`/`getCurrentUser`/`logout` over
+  the shared client; logout is client-side session termination only —
+  the backend has no token-revocation endpoint), and `context.tsx` (the
+  `AuthProvider` session state: `{user, isAuthenticated, isLoading,
+  login, logout, refreshUser}`, restoring exactly once on mount via
+  `/api/auth/me`; a stored token never renders authenticated UI without
+  that validation). Bearer injection is centralized in `client.ts` —
+  every request carries `Authorization: Bearer <token>` when a token is
+  stored, and a token-carrying 401 clears the token and flips the app to
+  unauthenticated (no redirects yet — Task 5.4). The login page renders
+  at `/fa/login` / `/en/login`. The frontend holds **no authorization
+  logic**: roles/permissions are never modeled or inferred client-side
+  (backend RBAC is docs/06 §4g). Because the browser now calls the API
+  directly, the backend serves CORS from configured origins
+  (`CORS_ALLOW_ORIGINS`, no wildcard credentials).
 
 ### 3.2 Backend — FastAPI (Python)
 
@@ -156,6 +176,7 @@ The single communication channel between the two applications:
 | Entry point | One FastAPI service; the frontend has no other backend to call |
 | Errors | Non-2xx responses; JSON error body `{"detail": ...}` (FastAPI-native) — MVP error policy defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4b |
 | Real-time | None in MVP — updates are visible on page load/refresh or explicit refetch. A push channel (SSE/WebSocket) is **TBD / out of MVP** |
+| Auth (browser) | The web app's browser code calls the API directly with a Bearer token obtained from `POST /api/auth/login` (Phase 5.3); CORS origins are configured server-side (`CORS_ALLOW_ORIGINS`). Token persistence and session semantics: `apps/web/lib/auth/` (localStorage MVP strategy — see §3.1 notes) |
 
 Rules of the boundary:
 
