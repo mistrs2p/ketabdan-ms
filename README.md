@@ -403,8 +403,13 @@ containers were hardened (read_only + tmpfs, cap_drop ALL, no-new-
 privileges) and validated by re-running the full local deployment
 simulation: 18/18 verification checks through the public edge,
 including login, plus a stack-recreation persistence check and direct
-runtime probes. CI has not yet run on the remote platform; every check
-was rehearsed locally (docs/13 §12 has the local equivalents).
+runtime probes. The first remote CI run then failed and exposed two real
+defects, both fixed: the ten PostgreSQL migration integration tests
+needed a real database (CI now provisions a disposable `postgres:18`
+service container — never mocked), and the lockfile requires npm 11
+while node:22 bundles npm 10 (CI now installs npm 11, as the web
+Dockerfile already did). The corrected workflow has been fully
+re-rehearsed locally (docs/13 §12).
 
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark
