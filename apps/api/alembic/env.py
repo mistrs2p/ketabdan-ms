@@ -9,22 +9,31 @@ Schema structure is derived from the SQLAlchemy models: importing
 ``app.models`` registers all ORM models on ``Base.metadata``, which is the
 single ``target_metadata`` used by autogenerate and ``alembic check``. No
 table definitions are duplicated in this file.
-"""
 
-from logging.config import fileConfig
+Logging: deliberately NOT configured here. The template's
+``fileConfig(alembic.ini)`` REPLACES the root logger's handlers and (with
+``disable_existing_loggers``, the stdlib default) silently disables
+already-configured loggers — clobbering the application's central logging
+(Task 5.8, app/core/logging.py) whenever migrations run in-process. The
+alembic.ini logging sections are inert leftovers; keep logging owned by
+one place.
+"""
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 import app.models  # noqa: F401 — registers all ORM models on Base.metadata
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.db.base import Base
 
 # Alembic Config object (provides access to values in alembic.ini).
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Same central logging as the application — idempotent, so importing this
+# module twice (or running migrations in an already-configured process)
+# never duplicates handlers or resets them.
+configure_logging(level=get_settings().log_level)
 
 # Resolve the URL from the application settings. Failing early with a clear
 # message is better than a confusing "could not parse URL" deep inside

@@ -20,13 +20,13 @@ first used, and a Redis outage becomes a controlled
 application itself never needs Redis just to import or serve.
 """
 
-import logging
 from typing import Any
 
 from arq import ArqRedis, create_pool
 from arq.connections import RedisSettings
 
 from app.core.config import Settings
+from app.core.logging import get_logger
 from app.worker.errors import NotificationQueueError
 from app.worker.jobs import (
     DELIVER_FUNCTION_NAME,
@@ -38,7 +38,7 @@ from app.worker.serialization import (
     json_job_serializer,
 )
 
-logger = logging.getLogger("app.worker.service")
+logger = get_logger("app.worker.service")
 
 # A bounded, short pool: enqueueing is one small command; we do not want
 # the enqueue path to hang forever when Redis is down (create_pool itself
@@ -81,6 +81,10 @@ class BackgroundNotificationService:
             except Exception as exc:
                 # Controlled failure: nothing was queued; sanitized message
                 # only (no Redis URL with embedded credentials).
+                logger.error(
+                    "notification Redis connection failed (%s)",
+                    exc.__class__.__name__,
+                )
                 raise NotificationQueueError(
                     f"could not connect to Redis for notification enqueueing "
                     f"({exc.__class__.__name__})"
@@ -112,7 +116,7 @@ class BackgroundNotificationService:
         )
         pool = await self._get_pool()
         try:
-            await pool.enqueue_job(
+            queued = await pool.enqueue_job(
                 DELIVER_FUNCTION_NAME,
                 job.to_payload(),
             )
@@ -120,14 +124,22 @@ class BackgroundNotificationService:
             # The pool is cached; a dead connection must not poison later
             # enqueues — drop it so the next attempt reconnects.
             self._pool = None
+            logger.error(
+                "notification enqueue failed (Redis problem): channel=%s "
+                "category=%s (%s)",
+                job.channel,
+                job.category,
+                exc.__class__.__name__,
+            )
             raise NotificationQueueError(
                 f"could not enqueue notification job ({exc.__class__.__name__})"
             ) from exc
         logger.info(
-            "notification job enqueued: channel=%s category=%s (delivery "
-            "happens in the background worker)",
+            "notification job enqueued: channel=%s category=%s job_id=%s "
+            "(delivery happens in the background worker)",
             job.channel,
             job.category,
+            getattr(queued, "job_id", "-"),
         )
         return job
 

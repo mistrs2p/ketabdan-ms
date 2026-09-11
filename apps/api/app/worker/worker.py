@@ -27,13 +27,13 @@ Running: ``python -m app.worker`` (see ``__main__.py``) or
 ``arq app.worker.worker.WorkerSettings``.
 """
 
-import asyncio
-import logging
 import re
+import time
 
 from arq import Retry
 
 from app.core.config import Settings, get_settings
+from app.core.logging import get_logger
 from app.notifications import NotificationDispatcher, NotificationResult
 from app.notifications.factory import build_notification_dispatcher
 from app.worker.errors import PermanentNotificationFailure
@@ -48,7 +48,7 @@ from app.worker.serialization import (
     json_job_serializer,
 )
 
-logger = logging.getLogger("app.worker.delivery")
+logger = get_logger("app.worker.delivery")
 
 # The provider layer (Task 5.6 _botapi.py) reports rate limits as fixed
 # diagnostic text "… rate limit exceeded (retry after Ns)" — the hint is
@@ -82,6 +82,11 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
     """
     dispatcher: NotificationDispatcher = ctx["notification_dispatcher"]
     policy: RetryPolicy = ctx["notification_retry_policy"]
+    # arq injects job_id/job_try; job_id is opaque (safe to log), job_try
+    # identifies the attempt. Together with channel/category these are
+    # the full diagnosable context — never text or recipient address.
+    job_id = str(ctx.get("job_id", "-"))
+    started = time.perf_counter()
 
     # 1. Reconstruct the generic NotificationMessage — strictly.
     try:
@@ -89,21 +94,29 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
         message = job.to_message()
     except Exception as exc:
         # Corrupt/hostile payload: permanent, and must not crash the worker.
-        logger.error("notification job payload is invalid: %s", exc)
+        logger.error(
+            "notification job payload is invalid: job_id=%s (%s)",
+            job_id,
+            exc.__class__.__name__,
+        )
         raise PermanentNotificationFailure(
             f"invalid job payload ({exc.__class__.__name__})"
         ) from exc
 
     # 2. Deliver through the existing abstraction.
     result = await dispatcher.send(message)
+    duration_ms = (time.perf_counter() - started) * 1000.0
 
     # 3. Classify (Task 5.5/5.6 semantics) and apply the bounded policy.
     if result.success:
         logger.info(
-            "notification delivered: channel=%s category=%s external_id=%s",
+            "notification delivered: channel=%s category=%s external_id=%s "
+            "job_id=%s duration_ms=%.0f",
             job.channel,
             job.category,
             result.external_message_id,
+            job_id,
+            duration_ms,
         )
         return "delivered"
 
@@ -116,10 +129,12 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
         # oversized message, …): retrying cannot help — permanent.
         logger.warning(
             "notification permanently rejected: channel=%s category=%s "
-            "error_code=%s",
+            "error_code=%s job_id=%s duration_ms=%.0f",
             job.channel,
             job.category,
             result.error_code,
+            job_id,
+            duration_ms,
         )
         raise PermanentNotificationFailure(
             f"provider rejected the notification ({result.error_code})"
@@ -130,11 +145,12 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
     if final_attempt:
         logger.error(
             "notification delivery failed permanently after %d attempts: "
-            "channel=%s category=%s error_code=%s",
+            "channel=%s category=%s error_code=%s job_id=%s",
             attempt,
             job.channel,
             job.category,
             result.error_code,
+            job_id,
         )
         raise PermanentNotificationFailure(
             f"delivery failed after {attempt} attempts "
@@ -145,11 +161,15 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
         attempt + 1, retry_after=_retry_after_hint(result.error_message)
     )
     logger.info(
-        "notification attempt %d/%d failed (error_code=%s) — retrying in %.1fs",
+        "notification attempt %d/%d failed (error_code=%s) — retrying in "
+        "%.1fs: channel=%s category=%s job_id=%s",
         attempt,
         policy.max_attempts,
         result.error_code,
         delay,
+        job.channel,
+        job.category,
+        job_id,
     )
     raise Retry(defer=delay)
 

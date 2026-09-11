@@ -17,7 +17,8 @@ is declared once per route decorator.
 
 from collections.abc import Callable
 
-from fastapi import Depends, HTTPException, status
+import logging
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
@@ -27,6 +28,13 @@ from app.services import authz
 
 # §4g: one generic message — never which permission was required.
 GENERIC_403_DETAIL = "Not authorized"
+
+# Security logging (Task 5.8): an authenticated user denied a permission
+# is a WARNING worth investigating (role misconfiguration, probing), but
+# still a correctly-handled outcome. User id and the missing permission
+# code are the minimum needed to diagnose; nothing about the request
+# body or headers.
+_security_log = logging.getLogger("app.api.security")
 
 
 def require_permission(permission: str) -> Callable[..., User]:
@@ -41,12 +49,20 @@ def require_permission(permission: str) -> Callable[..., User]:
     """
 
     def checker(
+        request: Request,
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> User:
         # get_current_user has already run: past this point the caller is
         # authenticated and active — only the permission question remains.
         if not authz.user_has_permission(db, user=current_user, permission=permission):
+            _security_log.warning(
+                "authorization failure: user_id=%s lacks permission=%s "
+                "request_id=%s",
+                current_user.id,
+                permission,
+                getattr(request.state, "request_id", "-"),
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=GENERIC_403_DETAIL,

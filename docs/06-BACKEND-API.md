@@ -38,13 +38,16 @@ apps/api/app/
 │   ├── deps.py         # require_permission factory — route protection (§4g)
 │   ├── event_assignments.py  # event-assignments router (POST create)
 │   ├── events.py       # events router (GET list/single, POST create)
+│   ├── middleware.py   # RequestLoggingMiddleware — one line per request
+│   │                   #   + X-Request-ID correlation (docs/01 §9)
 │   ├── persons.py      # persons router
 │   └── roles.py        # one router module per resource
 ├── core/
 │   ├── config.py       # Settings (pydantic-settings; auth vars §4f,
-│   │                   #   CORS_ALLOW_ORIGINS §4h, notification
+│   │                   #   CORS_ALLOW_ORIGINS §4h, LOG_LEVEL, notification
 │   │                   #   tokens/timeout — docs/01 §6; Redis URL +
 │   │                   #   retry policy — docs/01 §6.5)
+│   ├── logging.py      # central logging configuration (docs/01 §9)
 │   └── security.py     # all cryptography: Argon2id + JWT (§4f)
 ├── assign_role.py      # operator CLI: python -m app.assign_role (§4g)
 ├── create_user.py      # bootstrap CLI: python -m app.create_user (§4f, §4g)

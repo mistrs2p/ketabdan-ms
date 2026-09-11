@@ -239,6 +239,21 @@ service → real arq worker → real providers) is tested offline against
 fakeredis + a mock HTTP transport. No business event triggers
 notifications yet — this is the reusable infrastructure they will call.
 
+Task 5.8 added the **production logging foundation** (docs/01 §9): one
+central configuration in `apps/api/app/core/logging.py` (stdlib `logging`
+only — no framework, no observability stack), one consistent format
+(UTC ISO-8601, level, logger name, pid) for the API and the worker, and
+`LOG_LEVEL` as a validated setting. HTTP requests are logged once per
+request (method, path, status, duration, request id) with a size- and
+charset-bounded `X-Request-ID` correlation id echoed in the response;
+authentication/authorization failures log the reason and a minimal user
+reference at WARNING while responses stay generic; unexpected exceptions
+get exactly one stack trace (the server's — no duplicate app-level
+handler). Credentials, tokens, notification text, and recipient
+addresses are never logged — pinned by tests. The worker's logs carry
+job id, attempt, channel, and category for diagnosability. Metrics,
+tracing, and alerting remain out of scope.
+
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark
 theming, the typed API client layer (`apps/web/lib/api/`), and the
