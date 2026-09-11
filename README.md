@@ -218,8 +218,26 @@ with the provider's retry hint preserved), requests are bounded by
 rejected (4096-char guard) rather than truncated, and the recipient
 address is data in the JSON body — never a URL (SSRF-safe). The whole
 test matrix runs against an in-memory mock transport: no network, no
-credentials. No business workflow sends notifications yet, and no
-retries/background delivery exists yet — those are Task 5.7.
+credentials. No business workflow sends notifications yet — automatic
+triggers are a future task.
+
+Task 5.7 added **background delivery with bounded retries** (docs/01
+§6.5): `BackgroundNotificationService.enqueue_notification(...)` queues a
+generic, strictly-JSON job on Redis (ARQ 0.28 — asyncio-native, no
+pickle in Redis), and a separate worker process (`python -m app.worker`)
+consumes jobs, reconstructs the `NotificationMessage`, and delivers
+through the same `build_notification_dispatcher` factory — the provider
+layer is not duplicated. Failures classify per the 5.5/5.6 semantics:
+rejected → never retried; unavailable/unexpected → exponential backoff
+(`NOTIFICATION_MAX_ATTEMPTS` / base / max delay settings; provider
+retry-after hints respected, capped), after which the job fails
+permanently — no infinite retries. Delivery is **at-least-once**.
+Redis is `REDIS_URL` (default `redis://localhost:6390/0`; `docker
+compose up -d redis` provides it for local development) and is never
+required just to import or serve the API. The full pipeline (real
+service → real arq worker → real providers) is tested offline against
+fakeredis + a mock HTTP transport. No business event triggers
+notifications yet — this is the reusable infrastructure they will call.
 
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark

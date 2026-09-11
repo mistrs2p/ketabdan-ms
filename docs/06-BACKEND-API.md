@@ -43,7 +43,8 @@ apps/api/app/
 ├── core/
 │   ├── config.py       # Settings (pydantic-settings; auth vars §4f,
 │   │                   #   CORS_ALLOW_ORIGINS §4h, notification
-│   │                   #   tokens/timeout — docs/01 §6)
+│   │                   #   tokens/timeout — docs/01 §6; Redis URL +
+│   │                   #   retry policy — docs/01 §6.5)
 │   └── security.py     # all cryptography: Argon2id + JWT (§4f)
 ├── assign_role.py      # operator CLI: python -m app.assign_role (§4g)
 ├── create_user.py      # bootstrap CLI: python -m app.create_user (§4f, §4g)
@@ -57,6 +58,14 @@ apps/api/app/
 │   ├── models.py       # Message, Recipient, Channel, Result (neutral)
 │   ├── providers.py    # NotificationProvider protocol (async send)
 │   └── telegram.py     # TelegramNotificationProvider (api.telegram.org)
+├── worker/             # background delivery (docs/01 §6.5; Phase 5.7)
+│   ├── __init__.py     #   facade: service, job, retry policy, errors
+│   ├── __main__.py     # CLI: python -m app.worker (runs the ARQ worker)
+│   ├── jobs.py         # NotificationJob — queue-safe job contract
+│   ├── retry.py        # RetryPolicy — bounded exponential backoff
+│   ├── serialization.py  # strict JSON jobs (never pickle in Redis)
+│   ├── service.py      # BackgroundNotificationService.enqueue_notification
+│   └── worker.py       # ARQ WorkerSettings + deliver_notification job
 ├── schemas/
 │   ├── __init__.py
 │   ├── auth.py         # LoginRequest, TokenResponse, UserRead (§4f)

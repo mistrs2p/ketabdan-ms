@@ -217,20 +217,25 @@ Rules of the boundary:
 | Migrations | The backend owns schema changes and applies them in a controlled, repeatable way. Specific migration tooling is **TBD**. |
 | Frontend configuration | The Next.js app receives its environment-specific values (e.g., backend base URL) at build/deploy time — not hardcoded. |
 
-## 6. Notifications — Abstraction + Telegram/Bale Providers
+## 6. Notifications — Abstraction + Telegram/Bale Providers + Background Delivery
 
-**Status (updated, Phase 5.6):** the backend has the provider-agnostic
-notification abstraction (Task 5.5) **and** concrete Telegram and Bale
-providers on top of it (Task 5.6). Providers deliver over real HTTP to
-the platforms' verified Bot API endpoints; there are **no automatic
-business-event notifications, no retries, and no background delivery
-yet** — those are Task 5.7+.
+**Status (updated, Phase 5.7):** the backend has the provider-agnostic
+notification abstraction (Task 5.5), concrete Telegram and Bale providers
+(Task 5.6), **and** Redis-backed background delivery with bounded retries
+(Task 5.7). Providers deliver over real HTTP to the platforms' verified
+Bot API endpoints; delivery happens in a background worker (no business
+request path waits on a provider network call once the background service
+is used). There are **no automatic business-event notifications yet** —
+the infrastructure is ready for future triggers to call
+`enqueue_notification(...)`.
 
 ### 6.1 The boundary (`apps/api/app/notifications/`)
 
 ```text
-business service
-      ↓
+business service (future triggers)
+      ↓  enqueue_notification(...)                service.py (Task 5.7)
+Redis (arq queue, JSON jobs)                      app/worker/
+      ↓  Worker → reconstruct NotificationMessage
 NotificationDispatcher.send() / send_many()     dispatcher.py
       ↓
 NotificationProvider (Protocol, async send)     providers.py
@@ -327,14 +332,95 @@ network-free, and no module may import a Telegram/Bale SDK.
 
 - **Business-event notifications** — no workflow sends notifications
   yet; when a domain event requires one (see TBD A7), the service will
-  build a `NotificationMessage` and call the dispatcher.
-- **Retries / background delivery / queues / Redis** — Task 5.7 (the
-  provider failure classification above is what a retry policy will
-  consume).
+  build the notification and call
+  `BackgroundNotificationService.enqueue_notification(...)` (§6.5) — or
+  the dispatcher directly, when a synchronous send is genuinely wanted.
+- ~~**Retries / background delivery / queues / Redis** — Task 5.7~~
+  **[IMPLEMENTED — Phase 5.7, see §6.5]**.
 - **Persistence** (notification/delivery-history tables, subscriptions) —
-  deferred until a requirement asks for it.
+  deferred until a requirement asks for it. The worker intentionally has
+  no notification database table: job state lives in Redis, bounded by
+  the retry policy and job expiry.
 - **HTTP endpoints** — none; this is application infrastructure, not an
   API feature.
+
+### 6.5 Background delivery — Redis, worker, retries (implemented — Phase 5.7)
+
+```text
+business service (future triggers)
+      ↓  enqueue_notification(...)                app/worker/service.py
+Redis (arq queue, JSON-serialized jobs)           REDIS_URL
+      ↓  Worker (arq)                             app/worker/worker.py
+      ↓  reconstruct NotificationMessage          app/worker/jobs.py
+NotificationDispatcher via build_notification_dispatcher (§6.2)
+      ↓
+Telegram / Bale provider → external delivery
+```
+
+- **Technology:** [ARQ](https://arq-docs.helpmanual.io/) 0.28 — a small
+  asyncio-native job queue on redis-py's async client (chosen over
+  Celery: the codebase is async, the delivery job is one async call, and
+  ARQ's `Retry`/`max_tries` semantics map exactly onto the classification
+  below; no broker/beat machinery needed). Jobs are serialized as
+  **strict JSON, not pickle** — a compromised Redis cannot execute code
+  in the worker, and anything non-serializable fails loudly at enqueue
+  time instead of silently entering the queue.
+- **The job contract** (`app/worker/jobs.py`): a `NotificationJob` is
+  the queue-safe image of a `NotificationMessage` — channel, recipient
+  address, text, category, metadata. Only stable JSON data; no Python
+  objects, callbacks, provider instances, credentials, or endpoints.
+  Reconstruction goes back through the Task 5.5 model, and unknown keys
+  are rejected (a corrupt or hostile payload fails permanently on its
+  first attempt).
+- **Redis configuration:** `REDIS_URL` (default
+  `redis://localhost:6390/0`, the compose port). Like `DATABASE_URL`, a
+  missing/unreachable Redis **never breaks importing or starting the
+  API** — the connection is made when the queue is used (enqueue) or the
+  worker starts, with bounded connect timeouts and retries; an outage
+  becomes a controlled `NotificationQueueError` ("nothing was queued"),
+  never an obscure import-time crash.
+- **Retry classification** (the Task 5.5/5.6 failure semantics, applied):
+  successful result → done; `NotificationRejectedError`-class failures
+  (`notification_rejected` and specific codes like `recipient_invalid`,
+  `message_too_long`) → **permanent, never retried**;
+  `provider_unavailable` and `provider_error` → **retryable** with
+  bounded exponential backoff; unexpected worker exceptions are isolated
+  per job (one job can never crash another or the worker).
+- **Retry policy** (`NOTIFICATION_MAX_ATTEMPTS` = 5,
+  `NOTIFICATION_RETRY_BASE_DELAY_SECONDS` = 5,
+  `NOTIFICATION_RETRY_MAX_DELAY_SECONDS` = 300): attempt 1 runs
+  immediately; retry *n* waits `base · 2^(n-2)` seconds (5, 10, 20, 40…)
+  capped at the max delay; after the attempt budget is spent the job
+  fails permanently — **no infinite retries**. A provider rate-limit
+  hint (`retry_after`, parsed from the provider layer's fixed diagnostic
+  text) extends the wait up to the cap — a hostile hint cannot stall the
+  queue unbounded.
+- **Delivery semantics: at-least-once.** A worker shutdown mid-job
+  returns the job to the queue and it may run again — exactly-once is
+  **not** claimed and not yet needed (notifications are informational,
+  not financial). Idempotency keys / a delivery-history table are
+  deliberately deferred.
+- **Local development:** `docker compose up -d redis` (Redis 8, host
+  port 6390, no persistence — queue-only). The worker runs as
+  `python -m app.worker` or `arq app.worker.worker.WorkerSettings` in a
+  separate process, reading the same `.env`.
+- **Security:** the Redis endpoint comes only from settings — never from
+  notification data; queued payloads are strictly generic (no tokens —
+  tokens live only in the worker process's provider instances); worker
+  log/failure text carries channels, categories, and stable error codes,
+  never tokens, full provider URLs, or raw responses.
+
+Tests: `tests/test_worker_jobs.py` (job contract, serialization
+strictness, configuration validation, enqueue behavior including the
+unreachable-Redis controlled failure),
+`tests/test_worker_retry.py` (backoff math, retry-after handling,
+classification of every failure class),
+`tests/test_worker_integration.py` (the full pipeline — real service,
+real arq Worker, real factory dispatcher, real provider wire code —
+against fakeredis and `httpx2.MockTransport`; success, retry-then-
+succeed, rejected-first-attempt, attempt exhaustion, multi-job
+isolation, and queue-content security checks). No test touches real
+Redis or a real provider.
 
 ### 6.4 Standing rules from 00-PROJECT-CONTEXT.md §6
 
@@ -360,7 +446,7 @@ network-free, and no module may import a Telegram/Bale SDK.
 | T9 | Deployment topology & hosting (where FastAPI, Next.js, and PostgreSQL run) | Not yet decided |
 | T10 | Use of Next.js server-side features (SSR modes, API routes) beyond standard rendering | UI architecture decision; belongs to frontend design |
 | T11 | Backups, read replicas, and DB operational hardening | Operational; single-branch scale doesn't force an early answer |
-| T12 | Background jobs/scheduler mechanism (needed for reminders/escalations if A7/A10 require them) | Domain rules for reminders are still TBD |
+| T12 | ~~Background jobs/scheduler mechanism (needed for reminders/escalations if A7/A10 require them)~~ **[PARTIALLY RESOLVED — MVP]**: background *notification delivery* is implemented (Phase 5.7, §6.5: Redis + ARQ worker with bounded retries). Reminders/escalations scheduling remains TBD with the domain rules (A7/A10). | Domain rules for reminders are still TBD |
 
 ---
 
