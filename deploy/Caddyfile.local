@@ -1,0 +1,29 @@
+# Ketabdaneh edge proxy — LOCAL SIMULATION Caddyfile (Task 5.12; docs/12 §16).
+#
+# Identical routing to deploy/Caddyfile with exactly one difference:
+# `tls internal` — Caddy issues certificates from its own internal CA
+# instead of ACME. This is what makes the local deployment simulation
+# possible without a real domain, real DNS, or Let's Encrypt: any fake
+# domain (the default is `localhost`) gets a locally-trusted certificate
+# and the same HTTP→HTTPS redirect + /api routing as production.
+#
+# NEVER use this file on a real server: certificates from Caddy's
+# internal CA are not publicly trusted. On a real deployment set
+# CADDYFILE=./deploy/Caddyfile in .env.prod (the default) and a real
+# WEB_DOMAIN — see docs/12 §4/§8.
+
+{$WEB_DOMAIN} {
+	# Simulation TLS: Caddy's internal CA, no ACME, no public trust.
+	tls internal
+
+	encode zstd gzip
+
+	# Same routing as production (see deploy/Caddyfile).
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

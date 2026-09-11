@@ -1,5 +1,10 @@
-# Production-like application stack (Task 5.11; docs/01 §12).
+# Production application stack (Task 5.11 baseline; Task 5.12 added the
+# Caddy edge proxy and the single-public-port topology — docs/01 §12,
+# docs/12-DEPLOYMENT.md).
 #
+#              ┌── caddy :80/:443 — the ONLY published ports ──┐
+#   Internet ──┤   /api/* -> api:8000,  everything else -> web:3000
+#              └──────────────── internal network ─────────────┘
 #   web ──> api ──> postgres
 #               └─> redis ──> worker
 #
@@ -15,8 +20,8 @@
 # argument — the only build argument is NEXT_PUBLIC_API_BASE_URL, public
 # browser-side configuration.
 #
-# Start (first time / after code changes):
-#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+# Start / update everything (repeatable flow, docs/12 §6):
+#   scripts/deploy.sh
 # Apply migrations (explicit, never automatic — docs/01 §12.4):
 #   docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api alembic upgrade head
 
@@ -78,10 +83,10 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       BALE_BOT_TOKEN: ${BALE_BOT_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    ports:
-      # The browser calls the API directly (docs/01 §4), so the API is
-      # host-published until a reverse proxy (a later task) fronts it.
-      - "${API_PUBLISHED_PORT:-8000}:8000"
+    # NOT published to the host (Task 5.12): the browser reaches the API
+    # same-origin through Caddy (https://<domain>/api/...), so the only
+    # host-published ports in this stack are the proxy's 80/443. The
+    # container still listens on 8000 inside the internal network.
     depends_on:
       # Startup ordering only — the application itself stays resilient to
       # dependency races (bounded retries; readiness reports honestly).
@@ -157,8 +162,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    ports:
-      - "${WEB_PUBLISHED_PORT:-3000}:3000"
+    # NOT published to the host (Task 5.12): Caddy fronts the web app on
+    # 80/443; the container listens on 3000 inside the internal network.
     # Node's own fetch (no curl/wget in the image): any served response
     # (including the middleware's locale redirect) proves the server is up.
     healthcheck:
@@ -170,8 +175,48 @@ services:
     networks:
       - internal
 
+  # Edge proxy (Task 5.12; docs/12 §3/§5): the ONLY service publishing
+  # host ports (80/443). Terminates TLS (Caddy automatic HTTPS for the
+  # real WEB_DOMAIN via ACME; the local simulation mounts
+  # deploy/Caddyfile.local and uses Caddy's internal CA), redirects
+  # HTTP→HTTPS, routes /api/* to the API and everything else to the web
+  # app. /metrics is deliberately NOT routed (internal-only, docs/12
+  # §14). Not an open proxy: fixed upstreams on the internal network
+  # only.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      WEB_DOMAIN: ${WEB_DOMAIN:?set WEB_DOMAIN in .env.prod (the public domain the stack is served under)}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - "${HTTP_PUBLISHED_PORT:-80}:80"
+      - "${HTTPS_PUBLISHED_PORT:-443}:443"
+    volumes:
+      # Which Caddyfile: the production one (ACME, default) or
+      # deploy/Caddyfile.local for the local deployment simulation
+      # (internal CA, fake domain — docs/12 §16).
+      - ${CADDYFILE:-./deploy/Caddyfile}:/etc/caddy/Caddyfile:ro
+      # Certificates/acme state survive restarts and recreation.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    # No container healthcheck: the caddy image ships no wget/curl, and
+    # an HTTP probe would need to follow the HTTPS redirect with the
+    # right SNI. The proxy is the front door — if it is down, the
+    # deployment verification script (scripts/verify_deployment.py)
+    # fails loudly; restart policy covers transient crashes.
+    networks:
+      - internal
+
 networks:
   internal:
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:

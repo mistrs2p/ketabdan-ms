@@ -191,7 +191,7 @@ The single communication channel between the two applications:
 | Entry point | One FastAPI service; the frontend has no other backend to call |
 | Errors | Non-2xx responses; JSON error body `{"detail": ...}` (FastAPI-native) — MVP error policy defined in [06-BACKEND-API.md](06-BACKEND-API.md) §4b |
 | Real-time | None in MVP — updates are visible on page load/refresh or explicit refetch. A push channel (SSE/WebSocket) is **TBD / out of MVP** |
-| Auth (browser) | The web app's browser code calls the API directly with a Bearer token obtained from `POST /api/auth/login` (Phase 5.3); CORS origins are configured server-side (`CORS_ALLOW_ORIGINS`). Token persistence and session semantics: `apps/web/lib/auth/` (localStorage MVP strategy — see §3.1 notes) |
+| Auth (browser) | The web app's browser code calls the API directly with a Bearer token obtained from `POST /api/auth/login` (Phase 5.3); CORS origins are configured server-side (`CORS_ALLOW_ORIGINS`). Token persistence and session semantics: `apps/web/lib/auth/` (localStorage MVP strategy — see §3.1 notes). In the production deployment the browser reaches the API same-origin (`https://<domain>/api/...`) through the Caddy edge proxy, so CORS never triggers there (docs/12 §5) |
 
 Rules of the boundary:
 
@@ -830,9 +830,12 @@ infrastructure-level decision, out of scope here).
 ## 12. Production Container Baseline (implemented — Task 5.11)
 
 A production-oriented container/runtime baseline on top of the existing
-application — containerization only, deliberately not a deployment
-story (no cloud, no TLS, no reverse proxy, no CI/CD, no Kubernetes;
-all later tasks).
+application. Task 5.11 was containerization only; Task 5.12 added the
+Caddy edge proxy, the single-public-port topology, and the full
+deployment workflow — that story lives in **docs/12-DEPLOYMENT.md**
+(prerequisites, first deployment, updates, migrations, TLS, firewall,
+backup/restore, rollback, verification, troubleshooting, and the local
+deployment simulation). This section keeps the container-level facts.
 
 ### 12.1 Development vs production containers
 
@@ -843,10 +846,11 @@ Two compose files, one concern each:
   local dev servers against them. Unchanged by this task (header
   comment added).
 - `docker-compose.prod.yml` — **production topology**: the full
-  application containerized. PostgreSQL and Redis are **not** published
-  to the host; only the API (`8000`) and web (`3000`) are, because the
-  browser calls the API directly (§4) and no reverse proxy exists yet
-  (a later task fronts both).
+  application containerized behind a Caddy edge proxy. **Nothing
+  publishes a host port except the proxy** (80/443, Task 5.12):
+  PostgreSQL, Redis, the API, and web are internal-network only; the
+  browser reaches the API same-origin at `https://<domain>/api/...`
+  through the proxy (docs/12 §5).
 
 Developers never build production images for ordinary code changes —
 `next dev` / `uvicorn --reload` / `python -m app.worker` against the
@@ -927,22 +931,29 @@ unmodified inside the containers.
 
 ### 12.7 Running the production-like stack locally
 
+The local deployment simulation is the same stack with Caddy's internal
+CA and a fake domain (Task 5.12; full walkthrough in docs/12 §16):
+
 ```text
-cp .env.prod.example .env.prod          # all fake values; adjust ports if needed
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
-docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api alembic upgrade head
+cp .env.prod.example .env.prod          # defaults ARE the simulation values
+scripts/deploy.sh --skip-pull           # build → migrate → up → verify
 ```
 
-Verify: `docker compose --env-file .env.prod -f docker-compose.prod.yml ps`
-(all healthy), `GET http://localhost:8000/api/health/ready` (ok, with
-`worker: ok` once the first heartbeat lands ~30s in), and
-`http://localhost:3000` (web). No Telegram/Bale contact happens with
-empty tokens (§6).
+Verify: `docker compose --env-file .env.prod -f docker-compose.prod.yml
+ps` (all healthy), `https://localhost/api/health/ready` (ok, with
+`worker: ok` once the first heartbeat lands ~30s in; the certificate is
+Caddy-internal — verification tooling uses `--insecure-tls`), and
+`https://localhost/en` (web). No Telegram/Bale contact happens with
+empty tokens (§6). Nothing of the stack is reachable except the proxy's
+80/443 — the API/web/DB/Redis ports are internal-only.
 
-### 12.8 Explicitly out of scope (Task 5.11)
+### 12.8 Explicitly out of scope (Task 5.11/5.12)
 
-Cloud/server deployment, CI/CD, GitHub Actions, TLS certificates,
-reverse proxy, domain/DNS, Kubernetes, secret managers, monitoring
+Cloud/Kubernetes orchestration, CI/CD pipelines, secret managers,
+external monitoring stacks (e.g. a Prometheus server), multi-server
+topologies. The reverse proxy, TLS, deployment workflow, backup/
+restore/rollback, and verification story landed in Task 5.12
+(docs/12-DEPLOYMENT.md).
 platform deployment, resource limits (no evidence in the project to
 choose honest CPU/memory values — added when there is), durable Redis
 persistence, and any business-domain change.

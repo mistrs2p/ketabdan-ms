@@ -30,6 +30,11 @@ venv/
 # Docker
 postgres_data/
 
+# Deployment artifacts (Task 5.12): backups and restore rehearsal dumps
+# never enter the repository (docs/12 §10)
+backups/
+*.dump
+
 # Editors / OS
 .vscode/
 .idea/

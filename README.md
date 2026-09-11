@@ -118,23 +118,37 @@ The web app is now available at http://localhost:3000 (the login page is
 at `/fa/login` / `/en/login`). Unit/component tests (vitest +
 testing-library, browser DOM via jsdom): `npm test`.
 
-### Production-like container stack (Task 5.11)
+### Production stack and deployment (Tasks 5.11 + 5.12)
 
 The workflow above is the development workflow — local servers against
 the development compose file. The production runtime topology is
-containerized and lives in `docker-compose.prod.yml` (web → api →
-postgres + redis → worker; PostgreSQL/Redis not host-exposed).
-To run it locally with fake credentials:
+containerized in `docker-compose.prod.yml`: web → api → postgres +
+redis → worker, fronted by a **Caddy edge proxy** that is the only
+service publishing host ports (80/443). The browser reaches the API
+same-origin at `https://<domain>/api/...`; PostgreSQL, Redis, the API,
+and web are internal-network only.
+
+Deploying on a server, and running the same stack locally as a
+simulation with fake credentials and Caddy's internal CA:
 
 ```bash
-# from the repository root
-cp .env.prod.example .env.prod
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
-docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api alembic upgrade head
+# on the server (docs/12 §6):            # locally (docs/12 §16):
+cp .env.prod.example .env.prod           cp .env.prod.example .env.prod
+# edit per docs/12 §4 (real domain,      # defaults ARE the simulation
+# real secrets, ACME Caddyfile)          # values — nothing to edit
+scripts/deploy.sh                        scripts/deploy.sh --skip-pull
 ```
 
-See [docs/01-ARCHITECTURE.md](docs/01-ARCHITECTURE.md) §12 for the
-topology, healthchecks, ports, and the migration workflow.
+`scripts/deploy.sh` is the deterministic flow: pull → validate env →
+build → explicit `alembic upgrade head` → up → readiness wait →
+`scripts/verify_deployment.py` (public-edge smoke, 19 checks). Backups:
+`scripts/backup_db.sh`; restore rehearsal: `scripts/restore_db.sh`
+(docs/12 §10–§12).
+
+See [docs/12-DEPLOYMENT.md](docs/12-DEPLOYMENT.md) for prerequisites,
+server layout, TLS, firewall, backup/restore/rollback, verification,
+and troubleshooting, and [docs/01-ARCHITECTURE.md](docs/01-ARCHITECTURE.md)
+§12 for the container-level facts (images, healthchecks, ports).
 
 ## Current Project Status
 
@@ -339,6 +353,26 @@ fixed two latent bugs: the arq worker ignored `REDIS_URL` (arq's
 default localhost was used), and the readiness heartbeat check looked
 for a key arq never writes. No cloud deployment, TLS, reverse proxy,
 CI/CD, or Kubernetes — those are later tasks.
+
+Task 5.12 turned that baseline into the **production deployment story**
+(docs/12-DEPLOYMENT.md): a Caddy edge proxy is the only service
+publishing host ports (80/443) — TLS termination with automatic ACME
+certificates (a `tls internal` variant drives the local simulation),
+HTTP→HTTPS redirect, and same-origin routing (`https://<domain>/api/*`
+→ API, everything else → web; the browser calls the API same-origin, so
+CORS never triggers in production and no frontend rewrite was needed —
+every frontend path already starts with `/api/`). The API, web,
+PostgreSQL, and Redis publish nothing. `scripts/deploy.sh` is the
+deterministic deployment flow (pull → validate env → build → explicit
+migration → up → readiness wait → verify); `scripts/verify_deployment.py`
+checks the deployed system through its public edge (19 checks: redirect,
+TLS, web, API health/readiness, login + 401s, internal-only metrics,
+no exposed ports, worker heartbeat); `scripts/backup_db.sh` /
+`scripts/restore_db.sh` implement the pg_dump backup baseline and the
+rehearsed restore procedure. No real-server deployment was performed —
+the deployment was verified as a full local simulation with fake
+credentials and Caddy's internal CA (docs/12 §16 states this
+distinction explicitly).
 
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark

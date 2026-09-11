@@ -1,0 +1,61 @@
+# Ketabdaneh edge proxy — PRODUCTION Caddyfile (Task 5.12; docs/12).
+#
+# Single public entry point. The site address comes from the WEB_DOMAIN
+# environment variable (docker-compose.prod.yml), so no real domain is
+# ever committed — "example.com" is the placeholder used throughout the
+# documentation.
+#
+#   http://example.com/*      -> 308 redirect -> https://example.com/*
+#   https://example.com/api/* -> api:8000    (FastAPI, same-origin §5)
+#   https://example.com/*     -> web:3000    (Next.js: pages, locale
+#                                            routing, static assets)
+#
+# Deliberately NOT routed from the public Internet:
+#   - /metrics (the API's Prometheus endpoint) — internal-only policy
+#     (docs/12 §14): reachable only inside the Docker network, never
+#     through this proxy. A request for /metrics simply falls through to
+#     the web app (Next.js 404).
+#   - PostgreSQL (5432) and Redis (6379) — not on this network's public
+#     side at all; the containers publish no host ports.
+#
+# Caddy behavior relied on here (all default, no plugins):
+#   - Automatic HTTPS: certificates for WEB_DOMAIN are obtained from
+#     Let's Encrypt/ZeroSSL via ACME on first start and renewed
+#     automatically. Port 80 must stay reachable for HTTP-01 challenges
+#     and serves only the HTTPS redirect.
+#   - reverse_proxy sets X-Forwarded-For, X-Forwarded-Proto, and
+#     X-Forwarded-Host and preserves the Host header by default.
+#   - WebSocket upgrades are proxied transparently.
+#   - This is NOT an open proxy: it only forwards to the two fixed
+#     upstreams on the internal Docker network, never to arbitrary
+#     addresses.
+#
+# For the local deployment simulation use deploy/Caddyfile.local
+# (Caddy-internal certificates, no ACME) instead — see docs/12 §16.
+
+{
+	# ACME account address (expiry notices). Comes from the environment;
+	# the placeholder default is fake documentation material only.
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+{$WEB_DOMAIN} {
+	# Automatic HTTPS for WEB_DOMAIN: obtain + renew certificates via
+	# ACME, redirect all plain-HTTP requests to HTTPS.
+
+	# Compression for text responses (HTML/JSON/JS/CSS).
+	encode zstd gzip
+
+	# Same-origin API (Task 5.12 §5): the browser calls
+	# https://<domain>/api/... directly, and this routes it to the API
+	# container. No path rewrite — the API already serves everything
+	# under /api (docs/06 §4).
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# Everything else is the web app (locale-prefixed routes, assets).
+	handle {
+		reverse_proxy web:3000
+	}
+}
