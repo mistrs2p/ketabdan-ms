@@ -31,6 +31,7 @@ import re
 import time
 
 from arq import Retry
+from arq.connections import RedisSettings
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
@@ -249,10 +250,29 @@ async def shutdown(ctx: dict) -> None:
     logger.info("notification worker shutting down")
 
 
+def _worker_redis_settings() -> "RedisSettings":
+    """The worker's Redis connection, from the same REDIS_URL setting as
+    the rest of the application.
+
+    Task 5.11 bug fix (found by the containerized worker): arq reads
+    ``redis_settings`` from ``WorkerSettings.__dict__`` and otherwise
+    falls back to its own localhost:6379 default — the enqueue side
+    (service.py) honored REDIS_URL all along, but the worker silently
+    ignored it and could never reach any other Redis. arq's own connect
+    retry behavior is kept (startup stays resilient to dependency
+    races); only the target comes from configuration.
+    """
+    redis_settings = RedisSettings.from_dsn(
+        get_settings().redis_url.get_secret_value()
+    )
+    return redis_settings
+
+
 class WorkerSettings:
     """arq worker settings — the composition root of the worker process.
 
-    Run with: ``arq app.worker.worker.WorkerSettings``
+    Run with: ``arq app.worker.worker.WorkerSettings`` or
+    ``python -m app.worker`` (see ``__main__.py``).
     """
 
     functions = [deliver_notification]
@@ -261,6 +281,12 @@ class WorkerSettings:
     queue_name = NOTIFICATION_QUEUE_NAME
     job_serializer = json_job_serializer
     job_deserializer = json_job_deserializer
+    # Must be a plain class attribute: arq's create_worker reads
+    # WorkerSettings.__dict__ (not getattr/inheritance), so this is the
+    # only form both `arq`-CLI and `python -m app.worker` paths honor.
+    # Evaluated at import time — like every arq settings class — which
+    # reads the worker process's environment, exactly when it should.
+    redis_settings = _worker_redis_settings()
 
     # Bounded execution: one notification delivery is a couple of bounded
     # HTTP attempts — minutes are plenty.
@@ -269,7 +295,7 @@ class WorkerSettings:
     # classification + Retry defer), with arq's max_tries as the outer
     # bound so a bug in the classification can never loop forever.
     max_tries = 25
-    # Worker liveness signal (Task 5.9): arq refreshes <queue>:health in
+    # Worker liveness signal (Task 5.9): arq refreshes <queue>:health-check
     # Redis every 30s with a 31s TTL — the readiness endpoint reads it to
     # distinguish "Redis reachable" from "a worker process is actually
     # alive". The default (3600s) would make the heartbeat useless.

@@ -118,6 +118,24 @@ The web app is now available at http://localhost:3000 (the login page is
 at `/fa/login` / `/en/login`). Unit/component tests (vitest +
 testing-library, browser DOM via jsdom): `npm test`.
 
+### Production-like container stack (Task 5.11)
+
+The workflow above is the development workflow — local servers against
+the development compose file. The production runtime topology is
+containerized and lives in `docker-compose.prod.yml` (web → api →
+postgres + redis → worker; PostgreSQL/Redis not host-exposed).
+To run it locally with fake credentials:
+
+```bash
+# from the repository root
+cp .env.prod.example .env.prod
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api alembic upgrade head
+```
+
+See [docs/01-ARCHITECTURE.md](docs/01-ARCHITECTURE.md) §12 for the
+topology, healthchecks, ports, and the migration workflow.
+
 ## Current Project Status
 
 **Phase 4 (Frontend) complete; Phase 5 (Auth) underway.** The repository
@@ -297,6 +315,30 @@ documented convenience, including the placeholder secret with the
 explicit flag. No secret manager was added (deployment injects
 secrets as environment variables — see docs/01 §11.7), no secrets are
 stored in the database, and no new dependencies were introduced.
+
+Task 5.11 established the **production container baseline**
+(docs/01 §12): production Docker images for the whole application —
+multi-stage, non-root, no dev tooling or test dependencies — plus a
+production-oriented compose topology (`docker-compose.prod.yml`) with
+an explicit internal network, named-volume PostgreSQL persistence,
+native healthchecks for every service, `depends_on: service_healthy`
+startup ordering, and restart/graceful-stop policies (the worker's
+stop window exceeds its 120s job timeout). PostgreSQL and Redis are
+not exposed to the host in the production stack; only the API (8000)
+and web (3000) are published, because the browser calls the API
+directly until a reverse proxy task fronts them. The API and worker
+share one image (`ketabdaneh-api`) with different commands; the web
+image builds on Next.js standalone output. Migrations are an explicit
+`docker compose ... run --rm api alembic upgrade head` — never
+automatic. All runtime values come from a git-ignored `.env.prod`
+(`.env.prod.example` is the fake-values template); the only build
+argument is the public `NEXT_PUBLIC_API_BASE_URL`. Local development
+is unchanged (`docker-compose.yml` still provides PostgreSQL/Redis
+for local dev servers). The first real containerized run surfaced and
+fixed two latent bugs: the arq worker ignored `REDIS_URL` (arq's
+default localhost was used), and the readiness heartbeat check looked
+for a key arq never writes. No cloud deployment, TLS, reverse proxy,
+CI/CD, or Kubernetes — those are later tasks.
 
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark

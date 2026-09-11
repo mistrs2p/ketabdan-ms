@@ -32,7 +32,7 @@ from arq import ArqRedis, Worker
 from httpx2 import MockTransport, Request, Response
 
 import app.worker.worker as worker_module
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.notifications.factory import build_notification_dispatcher
 from app.worker.service import BackgroundNotificationService
 from app.worker.serialization import json_job_deserializer, json_job_serializer
@@ -402,6 +402,33 @@ def test_worker_settings_compose_the_real_job_function() -> None:
     assert WorkerSettings.job_serializer is json_job_serializer
     assert WorkerSettings.job_deserializer is json_job_deserializer
     assert WorkerSettings.max_tries >= 10  # outer bound, policy is primary
+
+
+# --- worker Redis wiring (Task 5.11) --------------------------------------------
+
+
+def test_worker_settings_declare_redis_settings() -> None:
+    # Regression pin (Task 5.11): arq's create_worker reads
+    # WorkerSettings.__dict__ only — without this attribute the worker
+    # silently used arq's localhost:6379 default and ignored REDIS_URL
+    # entirely (found by the containerized worker).
+    from arq.connections import RedisSettings
+
+    value = WorkerSettings.__dict__.get("redis_settings")
+    assert isinstance(value, RedisSettings)
+
+
+def test_worker_redis_settings_derive_from_redis_url(monkeypatch) -> None:
+    # The derivation helper honors REDIS_URL — same configuration truth
+    # as the enqueue side (service.py), never a second source.
+    monkeypatch.setenv("REDIS_URL", "redis://redis.example.invalid:6390/2")
+    get_settings.cache_clear()
+    try:
+        redis_settings = worker_module._worker_redis_settings()
+        assert redis_settings.host == "redis.example.invalid"
+        assert redis_settings.port == 6390
+    finally:
+        get_settings.cache_clear()
 
 
 # --- security: nothing secret crosses the queue ----------------------------------

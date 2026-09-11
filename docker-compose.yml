@@ -1,3 +1,8 @@
+# LOCAL DEVELOPMENT infrastructure only (Task 5.11 split): just PostgreSQL
+# and Redis with host ports for running the API/worker/web as local dev
+# servers (see README.md "Development"). The production runtime topology
+# lives in docker-compose.prod.yml.
+
 name: ketabdaneh
 
 services:

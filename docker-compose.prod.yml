@@ -1,0 +1,177 @@
+# Production-like application stack (Task 5.11; docs/01 §12).
+#
+#   web ──> api ──> postgres
+#               └─> redis ──> worker
+#
+# This is the production runtime topology: full containerized application,
+# internal network only for PostgreSQL/Redis, explicit healthchecks,
+# restart policies, graceful-stop windows. It is NOT the development
+# workflow — for local development use docker-compose.yml (PostgreSQL +
+# Redis only) with local dev servers (see README.md "Development").
+#
+# All credentials come from an environment file passed with --env-file
+# (never committed; .env.prod.example is the template with fake local
+# values). Nothing here contains a real secret, and no secret is a build
+# argument — the only build argument is NEXT_PUBLIC_API_BASE_URL, public
+# browser-side configuration.
+#
+# Start (first time / after code changes):
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+# Apply migrations (explicit, never automatic — docs/01 §12.4):
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api alembic upgrade head
+
+name: ketabdaneh-prod
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env.prod}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    # NOT published to the host: only api/worker reach it over the
+    # internal network. (docker-compose.yml exposes 5433 for development.)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  redis:
+    image: redis:8
+    restart: unless-stopped
+    # Ephemeral by design for this baseline (job queue, TTL'd health key);
+    # a durable Redis (AOF/RDB) belongs to a later persistence task.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # NOT published to the host: only api/worker reach it over the
+    # internal network. (docker-compose.yml exposes 6390 for development.)
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+
+  api:
+    build:
+      context: apps/api
+    image: ketabdaneh-api
+    restart: unless-stopped
+    init: true
+    environment:
+      APP_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?set AUTH_SECRET_KEY in .env.prod (>= 32 chars, real value in real deployments)}
+      AUTH_ALLOW_INSECURE_DEV_SECRET: "0"
+      # Service-name hosts on the internal network; container-internal
+      # ports (5432/6379), not the development host ports (5433/6390).
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:?set CORS_ALLOW_ORIGINS in .env.prod (no "*")}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      BALE_BOT_TOKEN: ${BALE_BOT_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      # The browser calls the API directly (docs/01 §4), so the API is
+      # host-published until a reverse proxy (a later task) fronts it.
+      - "${API_PUBLISHED_PORT:-8000}:8000"
+    depends_on:
+      # Startup ordering only — the application itself stays resilient to
+      # dependency races (bounded retries; readiness reports honestly).
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Liveness, not readiness: a container healthcheck must not kill the
+    # API when a dependency is down (restarts cannot fix the dependency);
+    # readiness (/api/health/ready) is the orchestrator's signal.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/live', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    # Graceful: uvicorn finishes in-flight requests on SIGTERM.
+    stop_grace_period: 30s
+    networks:
+      - internal
+
+  worker:
+    # Same image as the API (identical Python application and dependency
+    # set); the command differs. Independently restartable.
+    build:
+      context: apps/api
+    image: ketabdaneh-api
+    restart: unless-stopped
+    init: true
+    command: ["python", "-m", "app.worker"]
+    environment:
+      APP_ENV: production
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?set AUTH_SECRET_KEY in .env.prod (>= 32 chars, real value in real deployments)}
+      AUTH_ALLOW_INSECURE_DEV_SECRET: "0"
+      # The worker never opens a DB connection, but Task 5.10's production
+      # validation requires DATABASE_URL to be set explicitly — same
+      # environment as the API, one configuration truth.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      BALE_BOT_TOKEN: ${BALE_BOT_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+    # No HTTP healthcheck to fake — the worker serves no HTTP. This uses
+    # Task 5.9's own mechanism: arq's <queue>:health key in Redis
+    # (refreshed every 30s, 31s TTL). See worker_healthcheck.py.
+    healthcheck:
+      test: ["CMD", "python", "worker_healthcheck.py"]
+      interval: 45s
+      timeout: 5s
+      retries: 3
+      # Allow one full heartbeat interval (30s) plus startup.
+      start_period: 45s
+    # Graceful: arq stops taking jobs and finishes/cancels the running one
+    # on SIGTERM; a job may legitimately take up to job_timeout (120s in
+    # app/worker/worker.py), so the grace window exceeds it — after that
+    # the job returns to the queue (at-least-once delivery, docs/01 §6.5).
+    stop_grace_period: 130s
+    networks:
+      - internal
+
+  web:
+    build:
+      context: apps/web
+      args:
+        # Public, build-time browser configuration — NOT a secret.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?set NEXT_PUBLIC_API_BASE_URL in .env.prod (the API origin as the browser reaches it)}
+    image: ketabdaneh-web
+    restart: unless-stopped
+    init: true
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PUBLISHED_PORT:-3000}:3000"
+    # Node's own fetch (no curl/wget in the image): any served response
+    # (including the middleware's locale redirect) proves the server is up.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - internal
+
+networks:
+  internal:
+
+volumes:
+  postgres_data:
