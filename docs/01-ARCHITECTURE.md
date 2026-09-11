@@ -217,14 +217,16 @@ Rules of the boundary:
 | Migrations | The backend owns schema changes and applies them in a controlled, repeatable way. Specific migration tooling is **TBD**. |
 | Frontend configuration | The Next.js app receives its environment-specific values (e.g., backend base URL) at build/deploy time — not hardcoded. |
 
-## 6. Notification Abstraction & Future Providers — Telegram / Bale
+## 6. Notifications — Abstraction + Telegram/Bale Providers
 
-**Status (updated, Phase 5.5):** the backend now has a provider-agnostic
-notification abstraction — the *internal contract only*. Telegram and Bale
-integrations remain **future work** (Task 5.6): no real provider, token,
-SDK, or network call exists yet.
+**Status (updated, Phase 5.6):** the backend has the provider-agnostic
+notification abstraction (Task 5.5) **and** concrete Telegram and Bale
+providers on top of it (Task 5.6). Providers deliver over real HTTP to
+the platforms' verified Bot API endpoints; there are **no automatic
+business-event notifications, no retries, and no background delivery
+yet** — those are Task 5.7+.
 
-### 6.1 The boundary (implemented — `apps/api/app/notifications/`)
+### 6.1 The boundary (`apps/api/app/notifications/`)
 
 ```text
 business service
@@ -233,21 +235,22 @@ NotificationDispatcher.send() / send_many()     dispatcher.py
       ↓
 NotificationProvider (Protocol, async send)     providers.py
       ↓
-concrete providers — Telegram / Bale / …        (Task 5.6, not built yet)
+TelegramNotificationProvider / BaleNotificationProvider
+      ↓ (shared Telegram-style wire handling: _botapi.py)
+https://api.telegram.org / https://tapi.bale.ai
 ```
 
 - **Neutral domain model** (`models.py`): `NotificationMessage`
   (recipient, text, category, metadata), `NotificationRecipient`
   (channel + opaque provider-external address — *no* `chat_id` /
   `phone_number` in the generic layer), `NotificationChannel` (StrEnum;
-  `telegram` and `bale` defined as the known future channels, extensible),
-  and `NotificationResult` (success, channel, optional
-  `external_message_id` / `error_code` / `error_message` — the only shape
-  business code ever sees; raw provider responses never leak through).
+  `telegram` and `bale`), and `NotificationResult` (success, channel,
+  optional `external_message_id` / `error_code` / `error_message` — the
+  only shape business code ever sees; raw provider responses never leak
+  through).
 - **Provider interface** (`providers.py`): a `Protocol` with a stable
   `channel` and an async `send(message) -> NotificationResult`. Not bound
-  to HTTP — future local/in-app providers fit too. All provider-specific
-  payload conversion stays inside provider implementations.
+  to HTTP — future local/in-app providers fit too.
 - **Dispatcher / registry** (`dispatcher.py`): built explicitly with its
   providers (constructor injection — no global registry state); routes by
   the recipient's channel. Business code never instantiates providers.
@@ -261,31 +264,86 @@ concrete providers — Telegram / Bale / …        (Task 5.6, not built yet)
   application 500 by the infrastructure itself. Business services decide
   whether a failure is fatal, retryable, or ignorable.
 
-Tests use a deterministic in-memory fake provider
-(`apps/api/tests/test_notifications.py`); no test touches the network, and
-a guard test keeps network/SDK imports out of the package.
+### 6.2 The concrete providers (implemented — Phase 5.6)
 
-### 6.2 Deliberately not in this layer (yet)
+`telegram.py` and `bale.py` are the **only** places that know their
+platform: endpoint, wire format, error semantics, message limits. Both
+verified contracts (2026-09) share one wire shape — POST
+`{base}/bot<token>/sendMessage` with JSON `{"chat_id": <address>,
+"text": <text>}`, and a JSON envelope `{"ok": bool, "result":
+{"message_id": ...}, "error_code", "description", "parameters"}` — so
+the common wire handling lives once in `_botapi.py` (each provider keeps
+its own endpoint/limits; if either API diverges, that provider splits
+off without touching the other). Telegram's contract was verified via
+the grammY types generated from the official Bot API reference and
+aiogram's client source; Bale's via the current `balethon` client
+implementing it.
 
-- **Real providers** (Telegram, Bale) — Task 5.6 plugs them in as
-  `NotificationProvider` implementations behind the existing boundary.
-- **Retries / background delivery / queues** — Task 5.7.
+- **Authentication:** the bot token travels in the URL path
+  (`/bot<token>/…`) — the platforms' documented mechanism. No
+  Authorization header; the token never appears in results, exception
+  messages, metadata, or logs.
+- **Configuration** (`factory.py` + `app/core/config.py`): tokens come
+  from `TELEGRAM_BOT_TOKEN` / `BALE_BOT_TOKEN` (never committed; see
+  `apps/api/.env.example`). `build_notification_dispatcher(settings)` is
+  the single composition point. Both providers are always registered —
+  an unconfigured one reports a `provider_unavailable` failure **only
+  when a send is attempted**, so the app runs with one, both, or no
+  providers configured. Nothing consumes the dispatcher yet (no
+  business triggers); Task 5.7 and future business events build on the
+  factory.
+- **Failure mapping** (HTTP → domain): 400/403/other 4xx →
+  `NotificationRejectedError` (recipient/message refused, e.g. "chat not
+  found"); 401 → `ProviderUnavailableError` (bot token rejected — a
+  configuration failure); 429 → `ProviderUnavailableError` (the
+  provider's `retry_after` hint is preserved in the message text);
+  5xx / timeout / connection failure / malformed response →
+  `ProviderUnavailableError`. The dispatcher normalizes all of these
+  into failure `NotificationResult`s with stable error codes.
+- **Message size (policy):** oversized messages are **rejected**
+  (`message_too_long`), never truncated or chunked. Telegram's
+  documented limit is 4096 characters; no public Bale limit was
+  verifiable, so the same 4096 guard is applied as a conservative bound.
+- **Timeouts:** every provider request is bounded
+  (`NOTIFICATION_TIMEOUT_SECONDS`, default 10 s); redirects are never
+  followed.
+- **SSRF safety:** the HTTP destination is assembled only from the
+  provider's constant base URL and the configured token. The recipient
+  address is *data* (a chat id in the JSON body) and can never steer the
+  URL — `NotificationRecipient(address="http://internal/…")` is simply a
+  string a provider will reject.
+
+Tests (`tests/test_notification_providers.py`,
+`tests/test_notification_factory.py`) run the full matrix — success,
+endpoint/auth/recipient/message assertions, Persian and mixed
+RTL/LTR Unicode, every HTTP status class, timeout/connection failure,
+malformed responses, missing tokens, and token/response-leakage checks —
+for **both** providers against an in-memory `httpx2.MockTransport`. No
+test touches the network or needs credentials. The Task 5.5 guard test
+still enforces the boundary: the generic contract modules stay
+network-free, and no module may import a Telegram/Bale SDK.
+
+### 6.3 Deliberately not in this layer (yet)
+
+- **Business-event notifications** — no workflow sends notifications
+  yet; when a domain event requires one (see TBD A7), the service will
+  build a `NotificationMessage` and call the dispatcher.
+- **Retries / background delivery / queues / Redis** — Task 5.7 (the
+  provider failure classification above is what a retry policy will
+  consume).
 - **Persistence** (notification/delivery-history tables, subscriptions) —
-  deferred until a requirement asks for it; the contract is in-memory.
-- **Business-event notifications** — no workflow sends notifications yet;
-  when a domain event requires one (see TBD A7), the service will build a
-  `NotificationMessage` and call the dispatcher.
+  deferred until a requirement asks for it.
 - **HTTP endpoints** — none; this is application infrastructure, not an
   API feature.
 
-### 6.3 Standing rules from 00-PROJECT-CONTEXT.md §6
+### 6.4 Standing rules from 00-PROJECT-CONTEXT.md §6
 
-- Telegram/Bale are **not** part of the MVP; nothing here changes that.
-- When they arrive they are **adapters on the backend** behind this
-  boundary — not extra services the frontend must know about, and not
-  logic embedded in the frontend.
-- The obligation remains: **don't build anything that blocks them** — the
-  abstraction above is exactly that insurance.
+- Telegram/Bale adapters live **on the backend behind this boundary** —
+  not as extra services the frontend must know about, and not as logic
+  embedded in the frontend (the frontend was not touched by Phase 5.6).
+- **No real credentials in source**: tokens come from the environment
+  only; `.env.example` carries placeholders; the test suite runs with
+  clearly-fake constants against mocked transport.
 
 ## 7. Architectural Decisions Still TBD
 

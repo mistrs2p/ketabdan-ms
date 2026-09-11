@@ -201,6 +201,26 @@ automatic 500). No real provider, token, SDK, network call, persistence,
 or retry exists yet — those belong to Tasks 5.6/5.7. No HTTP endpoint
 was added; this is infrastructure only.
 
+Task 5.6 added the **Telegram and Bale providers** (docs/01 §6.2):
+`TelegramNotificationProvider` (`api.telegram.org`) and
+`BaleNotificationProvider` (`tapi.bale.ai`) implement the Task 5.5
+provider protocol on top of verified Bot API contracts (POST
+`/bot<token>/sendMessage`; both platforms share the wire shape, so the
+common handling lives in `_botapi.py` while each adapter owns its
+endpoint and limits). Bot tokens come from `TELEGRAM_BOT_TOKEN` /
+`BALE_BOT_TOKEN` (`.env.example` documents them; no real credentials in
+source); `build_notification_dispatcher(settings)` is the single wiring
+point, and an unconfigured provider reports a provider-unavailable
+failure only when a send is actually attempted. Failures map to the
+5.5 error model (4xx → rejected, 401/429/5xx/timeout → unavailable,
+with the provider's retry hint preserved), requests are bounded by
+`NOTIFICATION_TIMEOUT_SECONDS` (default 10 s), oversized messages are
+rejected (4096-char guard) rather than truncated, and the recipient
+address is data in the JSON body — never a URL (SSRF-safe). The whole
+test matrix runs against an in-memory mock transport: no network, no
+credentials. No business workflow sends notifications yet, and no
+retries/background delivery exists yet — those are Task 5.7.
+
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark
 theming, the typed API client layer (`apps/web/lib/api/`), and the
