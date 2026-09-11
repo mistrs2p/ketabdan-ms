@@ -186,6 +186,21 @@ Navigation distinguishes only authenticated vs unauthenticated —
 **no permission-based UI hiding** (backend RBAC stays the real
 permission enforcement).
 
+Task 5.5 added the **notification abstraction** (docs/01 §6):
+`apps/api/app/notifications/` — a provider-agnostic boundary so future
+providers (Telegram/Bale in Task 5.6, later email/SMS/in-app) can plug
+in without business services knowing any provider detail. It defines a
+neutral `NotificationMessage` / `NotificationRecipient` (channel + an
+opaque provider-external address) model, an async `NotificationProvider`
+protocol, a `NotificationDispatcher` built by explicit constructor
+injection (no global state), normalized `NotificationResult`s, and
+distinct error types — an unregistered channel raises
+`UnsupportedChannelError`, while unavailable/rejected/crashing providers
+come back as failure results (never silently swallowed, never an
+automatic 500). No real provider, token, SDK, network call, persistence,
+or retry exists yet — those belong to Tasks 5.6/5.7. No HTTP endpoint
+was added; this is infrastructure only.
+
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark
 theming, the typed API client layer (`apps/web/lib/api/`), and the

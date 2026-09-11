@@ -2,7 +2,7 @@
 
 **Project:** Ketabdaneh
 **Document status:** Living document — update as discovery continues.
-**Last reviewed:** 2026-09-08
+**Last reviewed:** 2026-09-11
 **Depends on:** [00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md)
 
 ---
@@ -217,19 +217,75 @@ Rules of the boundary:
 | Migrations | The backend owns schema changes and applies them in a controlled, repeatable way. Specific migration tooling is **TBD**. |
 | Frontend configuration | The Next.js app receives its environment-specific values (e.g., backend base URL) at build/deploy time — not hardcoded. |
 
-## 6. Future Integrations — Telegram / Bale (explicitly NOT in MVP)
+## 6. Notification Abstraction & Future Providers — Telegram / Bale
 
-Telegram and Bale integrations are **future possibilities only**:
+**Status (updated, Phase 5.5):** the backend now has a provider-agnostic
+notification abstraction — the *internal contract only*. Telegram and Bale
+integrations remain **future work** (Task 5.6): no real provider, token,
+SDK, or network call exists yet.
 
-- They are **not** part of the MVP (confirmed in 00-PROJECT-CONTEXT.md §6).
-- No code, modules, or detailed integration contracts exist or are designed here.
-- Architectural intent only: when/if they arrive, they will be added as
-  **adapters on the backend** (a module that translates domain happenings into
-  platform messages) — *not* as extra services the frontend must know about, and
-  *not* as logic embedded in the frontend.
-- The only current obligation toward them is: **don't build anything today that
-  blocks them** (e.g., don't assume the UI is the only consumer of the backend's
-  domain logic).
+### 6.1 The boundary (implemented — `apps/api/app/notifications/`)
+
+```text
+business service
+      ↓
+NotificationDispatcher.send() / send_many()     dispatcher.py
+      ↓
+NotificationProvider (Protocol, async send)     providers.py
+      ↓
+concrete providers — Telegram / Bale / …        (Task 5.6, not built yet)
+```
+
+- **Neutral domain model** (`models.py`): `NotificationMessage`
+  (recipient, text, category, metadata), `NotificationRecipient`
+  (channel + opaque provider-external address — *no* `chat_id` /
+  `phone_number` in the generic layer), `NotificationChannel` (StrEnum;
+  `telegram` and `bale` defined as the known future channels, extensible),
+  and `NotificationResult` (success, channel, optional
+  `external_message_id` / `error_code` / `error_message` — the only shape
+  business code ever sees; raw provider responses never leak through).
+- **Provider interface** (`providers.py`): a `Protocol` with a stable
+  `channel` and an async `send(message) -> NotificationResult`. Not bound
+  to HTTP — future local/in-app providers fit too. All provider-specific
+  payload conversion stays inside provider implementations.
+- **Dispatcher / registry** (`dispatcher.py`): built explicitly with its
+  providers (constructor injection — no global registry state); routes by
+  the recipient's channel. Business code never instantiates providers.
+- **Error model** (`errors.py`): distinct failures —
+  `UnsupportedChannelError` (no provider registered — a wiring bug,
+  *raised*), `ProviderUnavailableError` and `NotificationRejectedError`
+  (delivery failures, *normalized into failure results*),
+  `InvalidNotificationError` (malformed message/recipient, raised at
+  construction). Unexpected provider crashes are normalized into a
+  `provider_error` result — never silently swallowed, never turned into an
+  application 500 by the infrastructure itself. Business services decide
+  whether a failure is fatal, retryable, or ignorable.
+
+Tests use a deterministic in-memory fake provider
+(`apps/api/tests/test_notifications.py`); no test touches the network, and
+a guard test keeps network/SDK imports out of the package.
+
+### 6.2 Deliberately not in this layer (yet)
+
+- **Real providers** (Telegram, Bale) — Task 5.6 plugs them in as
+  `NotificationProvider` implementations behind the existing boundary.
+- **Retries / background delivery / queues** — Task 5.7.
+- **Persistence** (notification/delivery-history tables, subscriptions) —
+  deferred until a requirement asks for it; the contract is in-memory.
+- **Business-event notifications** — no workflow sends notifications yet;
+  when a domain event requires one (see TBD A7), the service will build a
+  `NotificationMessage` and call the dispatcher.
+- **HTTP endpoints** — none; this is application infrastructure, not an
+  API feature.
+
+### 6.3 Standing rules from 00-PROJECT-CONTEXT.md §6
+
+- Telegram/Bale are **not** part of the MVP; nothing here changes that.
+- When they arrive they are **adapters on the backend** behind this
+  boundary — not extra services the frontend must know about, and not
+  logic embedded in the frontend.
+- The obligation remains: **don't build anything that blocks them** — the
+  abstraction above is exactly that insurance.
 
 ## 7. Architectural Decisions Still TBD
 
