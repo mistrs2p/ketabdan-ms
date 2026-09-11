@@ -13,9 +13,11 @@
 # CI needs NO secrets. Every job runs with `permissions: contents: read`
 # only, so untrusted fork PRs can run the exact same pipeline without any
 # secret ever being exposed to their code (docs/13 §7). No job deploys,
-# contacts Telegram/Bale, or requires real credentials — the backend tests
-# run on in-memory SQLite and fakeredis, the compose validation uses the
-# committed .env.prod.example fake values.
+# contacts Telegram/Bale, or requires real credentials. The backend job
+# gets a disposable PostgreSQL *service container* for the ten real
+# migration integration tests (the rest of the suite runs on in-memory
+# SQLite and fakeredis — the compose validation uses the committed
+# .env.prod.example fake values).
 #
 # Failure policy — CI FAILS on: test failures, lint errors, build errors,
 # broken compose/Dockerfile configs, real secrets detected by gitleaks, and
@@ -51,6 +53,24 @@ jobs:
   backend:
     name: Backend (compile, pip check, tests)
     runs-on: ubuntu-latest
+    # Disposable PostgreSQL for the migration integration tests
+    # (test_*_seed_migration.py): they run the real Alembic chain against
+    # a throwaway database on this server — never mocked. Same major
+    # version as the development/production stacks (docker-compose*.yml).
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: apps/api
@@ -84,8 +104,25 @@ jobs:
       - name: Dependency consistency (pip check)
         run: python -m pip check
 
-      - name: Tests (in-memory SQLite + fakeredis — no services needed)
+      - name: Tests (in-memory SQLite + fakeredis)
+        # No DATABASE_URL here: without it, the migration integration
+        # tests SKIP with their documented reason (their real run is the
+        # next step) — and the config-hardening tests see the same
+        # environment as a developer without a .env file.
         run: python -m pytest
+
+      - name: Migration tests (real PostgreSQL, disposable databases)
+        # The same ten tests, now for real against the service container:
+        # each creates a throwaway database, runs the actual Alembic
+        # chain (upgrade/downgrade/re-upgrade), and drops it. Never
+        # mocked, never skipped here.
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+        run: >-
+          python -m pytest
+          tests/test_seed_migration.py
+          tests/test_authz_seed_migration.py
+          tests/test_responsibility_seed_migration.py
 
   frontend:
     name: Frontend (lint, tests, build)
@@ -109,6 +146,14 @@ jobs:
           # never node_modules itself.
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+
+      - name: Use the lockfile's npm major (11)
+        # package-lock.json is generated and maintained by npm 11 (the
+        # local toolchain); node:22's bundled npm is older and rejects
+        # the lock as out of sync ("Missing: @swc/helpers@0.5.23 from
+        # lock file"). Same fix the web Dockerfile already applies
+        # (apps/web/Dockerfile deps stage).
+        run: npm install -g npm@11
 
       - name: Install dependencies (npm ci — exact lockfile state)
         run: npm ci
@@ -222,9 +267,11 @@ jobs:
       - name: Frontend dependency audit (npm audit, production deps)
         # Gate: critical, production dependencies only. Known exceptions
         # and their rationale are tracked in docs/13 §6 — anything new at
-        # critical severity fails the build.
+        # critical severity fails the build. npm is pinned to major 11
+        # first for the same reason as the frontend job (lockfile shape).
         working-directory: apps/web
         run: |
+          npm install -g npm@11
           npm ci
           npm audit --omit=dev --audit-level=critical
 

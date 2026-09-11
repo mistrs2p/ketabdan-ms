@@ -92,9 +92,13 @@ def disposable_db_engine():
     CREATE/DROP DATABASE statements on the same server; the development
     database itself is never migrated or modified by these tests.
     """
-    database_url = get_settings().database_url.get_secret_value()
-    if not database_url:
+    database_url_setting = get_settings().database_url
+    if database_url_setting is None:
+        # Check BEFORE unwrapping: None.get_secret_value() would raise
+        # AttributeError and turn the documented skip into an error (the
+        # first remote CI run failed exactly this way).
         pytest.skip("DATABASE_URL is not configured")
+    database_url = database_url_setting.get_secret_value()
 
     admin_engine = create_engine(database_url, isolation_level="AUTOCOMMIT")
     try:
