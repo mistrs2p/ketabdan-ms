@@ -15,9 +15,14 @@ dependencies = [
     # Async HTTP client for the notification providers (Phase 5.6);
     # also the transport starlette's TestClient prefers.
     "httpx2>=2.0",
+    # Async Redis-backed job queue for background notification delivery
+    # (Phase 5.7; asyncio-native, redis-py async client underneath).
+    "arq>=0.28",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    # In-memory Redis for the offline worker/queue tests (Task 5.7).
+    "fakeredis>=2.30",
 ]

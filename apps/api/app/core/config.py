@@ -7,7 +7,7 @@ are hard-coded; `apps/api/.env.example` documents the expected variables.
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -73,6 +73,32 @@ class Settings(BaseSettings):
     bale_bot_token: str | None = None
     # Bounded network time for one provider request, in seconds.
     notification_timeout_seconds: float = Field(default=10.0, gt=0)
+
+    # --- Background notification delivery (Phase 5.7; docs/01 §6.5) -------
+    # Redis backs the notification job queue. Like DATABASE_URL, a missing
+    # Redis must NOT break importing or starting the API application — the
+    # connection is made only when the queue/worker infrastructure starts
+    # (app/worker), and failures surface at that point, not at import time.
+    redis_url: str = "redis://localhost:6390/0"
+    # Bounded retry policy for background notification delivery: how many
+    # times a retryable failure (provider unavailable/unexpected error) is
+    # re-attempted, and the exponential backoff between attempts
+    # (base * 2^(n-2) for retry n, capped at the max delay). Rejected
+    # notifications are never retried.
+    notification_max_attempts: int = Field(default=5, ge=1)
+    notification_retry_base_delay_seconds: float = Field(default=5.0, gt=0)
+    notification_retry_max_delay_seconds: float = Field(default=300.0, gt=0)
+
+    @model_validator(mode="after")
+    def _retry_delays_make_sense(self) -> "Settings":
+        # A max delay below the base delay would make the backoff cap
+        # contradictory — reject the configuration cleanly at load time.
+        if self.notification_retry_max_delay_seconds < self.notification_retry_base_delay_seconds:
+            raise ValueError(
+                "notification_retry_max_delay_seconds must be greater than or "
+                "equal to notification_retry_base_delay_seconds"
+            )
+        return self
 
 
 @lru_cache

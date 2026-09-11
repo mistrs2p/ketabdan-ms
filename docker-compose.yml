@@ -25,5 +25,22 @@ services:
       timeout: 5s
       retries: 10
 
+  # Redis for the background notification job queue (Phase 5.7,
+  # docs/01-ARCHITECTURE.md §6.5). Host port 6390 by default: a native or
+  # container Redis may already occupy 6379, mirroring the PostgreSQL
+  # 5433 convention above. No password for local development; production
+  # infrastructure is out of scope (TBD T9).
+  redis:
+    image: redis:8
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6390}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   postgres_data:
