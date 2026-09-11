@@ -165,7 +165,8 @@ equivalent of every check: [docs/13-CI.md](docs/13-CI.md).
 
 ## Current Project Status
 
-**Phase 4 (Frontend) complete; Phase 5 (Auth) underway.** The repository
+**Phase 5 (Authentication, Infrastructure & Production Readiness) complete
+— verified 2026-09-11.** The repository
 contains the runnable
 full-stack application: local development infrastructure, the approved
 domain model and database schema design
@@ -410,6 +411,38 @@ service container — never mocked), and the lockfile requires npm 11
 while node:22 bundles npm 10 (CI now installs npm 11, as the web
 Dockerfile already did). The corrected workflow has been fully
 re-rehearsed locally (docs/13 §12).
+
+Task 5.14 closed Phase 5 with the **final end-to-end and production
+readiness verification** (2026-09-11). The full production-shaped local
+stack (Caddy edge, internal-only services, hardened containers) was
+deployed and driven end-to-end through its public edge: 35 E2E checks
+covering auth (valid/invalid/unknown-user login, `/me`, 401s, garbage
+tokens), authorization (operator's missing `people:create` → 403 while
+reads succeed), the business flow (create person → create event →
+assign responsibility → list/detail, invalid responsibility rejected),
+locale routing with RTL, every business screen, and health endpoints —
+plus the full `verify_deployment.py` 18/18. The notification pipeline
+was exercised live through the real Redis queue: bounded retry with
+exponential backoff (exactly 5 attempts), unsupported channels failing
+permanently without retries, provider errors normalized, and no real
+external notification sent (the unconfigured-token path raises before
+any network call). That exercise exposed one real defect — arq's
+job-start log lines embedded the serialized job arguments (recipient
+address and message text), violating the never-logged-content policy —
+fixed by pinning the `arq.worker` logger to WARNING (docs/01 §9.2) and
+locked with regression tests. Readiness degradation was verified live
+(worker stopped → honest `no_recent_heartbeat`, never a false "ok";
+restarted → recovered), and the backup/restore rehearsal ran end-to-end
+against a throwaway database that was dropped afterwards, with the
+development stack untouched. All security gates re-run green (gitleaks
+over the full history, pip-audit, npm-audit critical gate with the one
+documented postcss exception, bandit, compose security tests), and the
+production blocker audit found no blockers (zero TODO/FIXME in code;
+the ~70 `TBD-Dx` markers are the intended pointers to open domain
+decisions — the next phase's work). Verdict: **PRODUCTION READY** — the
+repository is verified ready for a real deployment; an actual production
+deployment was **not** performed and remains an operator action
+(docs/12 §6).
 
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark

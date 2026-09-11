@@ -500,7 +500,7 @@ else (pinned by a structural test).
 | HTTP requests | `app.api.request` | one line per request: method, path, status, duration_ms, request_id. uvicorn's access log is silenced by the central config so requests are logged exactly once. |
 | Unhandled 5xx | `uvicorn.error` | Starlette's `ServerErrorMiddleware` re-raises; the server logs the single stack trace. We deliberately register NO app-level exception handler for 500s — that would log the traceback twice. The `{"detail": ...}` API error contract is unchanged. |
 | Auth/authz failures | `app.api.security` | WARNING on every authentication failure (reason + request_id, username on login failures, user_id on permission denials) and INFO on successful logins. |
-| Notification queue | `arq.worker` | arq's own lifecycle lines propagate to the root handler unchanged. |
+| Notification queue | `arq.worker` | arq's worker logger is pinned to WARNING by the central config: its INFO job-start lines embed the serialized job arguments — recipient address and message text, which §9.4 locks as never-logged content. Its ERROR lines (job failures, no arguments) propagate to the root handler unchanged. |
 | Notification delivery | `app.worker.delivery` / `app.worker.service` | see §9.4 |
 | Everything else | `app.*` per module | via `get_logger` |
 

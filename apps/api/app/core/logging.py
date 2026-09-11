@@ -22,6 +22,13 @@ Design:
   request id). When uvicorn applies its own dictConfig it does so BEFORE
   the app is imported, so this runs after and wins; when the app runs
   without uvicorn (tests) the logger is inert anyway.
+- ``arq.worker`` is pinned to WARNING because arq's job-start INFO
+  lines embed the serialized job arguments — for notification jobs that
+  is the recipient address and the message text, which §9.4 of the
+  architecture doc locks as never-logged content. arq's ERROR lines
+  (job failed — no arguments) still propagate to the root handler, and
+  our own ``app.worker.delivery`` lines carry the full job lifecycle in
+  safe fields (channel, category, job_id, attempt counts).
 
 Who logs what (no duplicates):
 
@@ -30,7 +37,11 @@ Who logs what (no duplicates):
                     re-raises unhandled exceptions and the server logs the
                     stack trace exactly once; we deliberately do NOT add
                     an app-level Exception handler that would log it twice
-- arq queue events→ ``arq.worker`` (propagates to root)
+- arq queue events→ ``arq.worker`` ERROR lines (failures, no job
+                    arguments) propagate to root; the logger is pinned
+                    to WARNING because arq's INFO job-start lines embed
+                    the job arguments — recipient address and message
+                    text — which are never-logged content (§9.4)
 - everything else→ ``app.*`` loggers per module
 
 Call sites: ``app.main`` (import time — runs once per process, after
@@ -110,7 +121,9 @@ def configure_logging(level: str | int | None = None) -> None:
       root logger; a second call never adds another handler.
     - A second call MAY adjust the root level (e.g. tests), nothing else.
     - Silences ``uvicorn.access`` (our request middleware is the single
-      per-request log line — see module docstring).
+      per-request log line — see module docstring) and pins
+      ``arq.worker`` to WARNING (arq's INFO job-start lines embed the
+      job arguments — see module docstring).
     """
     root = logging.getLogger()
 
@@ -121,5 +134,12 @@ def configure_logging(level: str | int | None = None) -> None:
         uvicorn_access = logging.getLogger("uvicorn.access")
         uvicorn_access.handlers = []
         uvicorn_access.propagate = False
+        # arq's job-start INFO lines embed the serialized job arguments —
+        # for notification jobs the recipient address and message text
+        # (never-logged content, §9.4). Pinning is done only here, on
+        # first install, so a later root-level change (tests raising the
+        # verbosity) can never re-enable the leak. arq's ERROR lines
+        # carry no arguments and still propagate.
+        logging.getLogger("arq.worker").setLevel(logging.WARNING)
 
     root.setLevel(_resolve_level(level))
