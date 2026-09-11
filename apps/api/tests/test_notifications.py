@@ -317,18 +317,37 @@ def test_recipient_is_channel_plus_opaque_address() -> None:
 
 
 # --- 14/24. no network, no credentials, no SDKs in the abstraction ----------
+#
+# Boundary enforced (refined in Phase 5.6): the GENERIC notification
+# contract (models / dispatcher / errors / provider protocol / package
+# facade) must stay network-free and SDK-free — business code depends
+# only on it. The concrete provider adapters (telegram.py, bale.py,
+# _botapi.py, factory.py — added in Task 5.6) are exactly the place
+# where HTTP happens, so network imports are allowed there, but no
+# module in the package may depend on a Telegram/Bale SDK: providers
+# speak plain HTTP to their documented endpoints.
 
-# Modules the notification layer must never depend on: network stacks,
-# Telegram/Bale SDKs. The abstraction is the boundary that keeps them out.
-FORBIDDEN_IMPORTS = {
+GENERIC_MODULES = {
+    "models.py",
+    "dispatcher.py",
+    "errors.py",
+    "providers.py",
+    "__init__.py",
+}
+
+NETWORK_MODULES = {
     "httpx",
+    "httpx2",
     "requests",
     "urllib",
     "http",
     "socket",
     "aiohttp",
-    "telegram",
-    "bale",
+}
+
+SDK_MODULES = {
+    "telegram",  # the python-telegram-bot / telethon family
+    "bale",      # balethon etc.
 }
 
 
@@ -337,19 +356,46 @@ def _package_source_files() -> list[Path]:
     return sorted(package_dir.glob("*.py"))
 
 
-def test_notification_package_has_no_network_or_sdk_imports() -> None:
-    files = _package_source_files()
-    assert files, "expected the app/notifications package sources"
-    for source in files:
-        for line in source.read_text(encoding="utf-8").splitlines():
-            code = line.strip()
-            if not (code.startswith("import ") or code.startswith("from ")):
-                continue  # only actual import statements matter
-            for module in FORBIDDEN_IMPORTS:
-                assert module not in code, (
-                    f"{source.name} imports forbidden module "
-                    f"'{module}' in the notification abstraction"
-                )
+def _imported_top_level_modules(source: Path) -> set[str]:
+    """Top-level module names of every import statement in ``source``.
+
+    ``from app.notifications.telegram import X`` yields ``app`` (an
+    internal import); ``import httpx2`` yields ``httpx2``.
+    """
+    modules: set[str] = set()
+    for line in source.read_text(encoding="utf-8").splitlines():
+        code = line.strip()
+        if code.startswith("from "):
+            modules.add(code.split()[1].split(".")[0])
+        elif code.startswith("import "):
+            for part in code[len("import ") :].split(","):
+                name = part.strip().split()[0]
+                if name:
+                    modules.add(name.split(".")[0])
+    return modules
+
+
+def test_generic_notification_contract_has_no_network_or_sdk_imports() -> None:
+    for source in _package_source_files():
+        if source.name not in GENERIC_MODULES:
+            continue
+        modules = _imported_top_level_modules(source)
+        for module in sorted(modules & (NETWORK_MODULES | SDK_MODULES)):
+            raise AssertionError(
+                f"{source.name} (generic notification contract) imports "
+                f"forbidden module '{module}'"
+            )
+
+
+def test_notification_package_has_no_provider_sdk_imports() -> None:
+    # Providers use plain HTTP against their verified endpoints — never
+    # an SDK, which would drag provider concerns back above the boundary.
+    for source in _package_source_files():
+        modules = _imported_top_level_modules(source)
+        for module in sorted(modules & SDK_MODULES):
+            raise AssertionError(
+                f"{source.name} imports provider SDK module '{module}'"
+            )
 
 
 def test_notification_models_carry_no_credential_fields() -> None:

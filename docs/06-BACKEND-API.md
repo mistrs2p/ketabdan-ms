@@ -42,16 +42,21 @@ apps/api/app/
 │   └── roles.py        # one router module per resource
 ├── core/
 │   ├── config.py       # Settings (pydantic-settings; auth vars §4f,
-│   │                   #   CORS_ALLOW_ORIGINS §4h)
+│   │                   #   CORS_ALLOW_ORIGINS §4h, notification
+│   │                   #   tokens/timeout — docs/01 §6)
 │   └── security.py     # all cryptography: Argon2id + JWT (§4f)
 ├── assign_role.py      # operator CLI: python -m app.assign_role (§4g)
 ├── create_user.py      # bootstrap CLI: python -m app.create_user (§4f, §4g)
-├── notifications/      # provider-agnostic notification boundary
-│   ├── __init__.py     #   (docs/01 §6; Phase 5.5 — no providers yet)
+├── notifications/      # notification boundary + concrete providers
+│   ├── __init__.py     #   generic facade (docs/01 §6; Phase 5.5+5.6)
+│   ├── _botapi.py      # shared Telegram-style wire handling
+│   ├── bale.py         # BaleNotificationProvider (tapi.bale.ai)
 │   ├── dispatcher.py   # NotificationDispatcher — send/send_many/register
 │   ├── errors.py       # unsupported-channel / unavailable / rejected
+│   ├── factory.py      # build_notification_dispatcher(settings)
 │   ├── models.py       # Message, Recipient, Channel, Result (neutral)
-│   └── providers.py    # NotificationProvider protocol (async send)
+│   ├── providers.py    # NotificationProvider protocol (async send)
+│   └── telegram.py     # TelegramNotificationProvider (api.telegram.org)
 ├── schemas/
 │   ├── __init__.py
 │   ├── auth.py         # LoginRequest, TokenResponse, UserRead (§4f)

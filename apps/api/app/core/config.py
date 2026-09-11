@@ -7,6 +7,7 @@ are hard-coded; `apps/api/.env.example` documents the expected variables.
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -62,6 +63,16 @@ class Settings(BaseSettings):
     # Allow the obviously-unsafe placeholder secret. Default True for the
     # development workflow; production sets this to 0/false.
     auth_allow_insecure_dev_secret: bool = True
+
+    # --- Notifications (Phase 5.6; docs/01 §6, .env.example) --------------
+    # Provider bot tokens come from the environment and are NEVER committed.
+    # A missing/empty token does not break startup or the other provider:
+    # the factory still registers the provider, and it reports a
+    # provider-unavailable failure only when a send is actually attempted.
+    telegram_bot_token: str | None = None
+    bale_bot_token: str | None = None
+    # Bounded network time for one provider request, in seconds.
+    notification_timeout_seconds: float = Field(default=10.0, gt=0)
 
 
 @lru_cache
