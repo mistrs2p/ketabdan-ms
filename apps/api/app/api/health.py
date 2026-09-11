@@ -33,15 +33,16 @@ import asyncio
 import redis.asyncio as aioredis
 from arq.constants import health_check_key_suffix
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.metrics import metrics_payload
 from app.db.session import get_engine
+from app.schemas.health import LivenessRead, ReadinessRead
 from app.worker.jobs import NOTIFICATION_QUEUE_NAME
 
-router = APIRouter(prefix="/api/health", tags=["health"])
+router = APIRouter(prefix="/api/health", tags=["Health"])
 
 _health_log = get_logger("app.api.health")
 
@@ -150,24 +151,65 @@ async def _check_worker_heartbeat() -> str:
         return _WORKER_NO_HEARTBEAT
 
 
-@router.get("")
-@router.get("/live")
+@router.get(
+    "",
+    response_model=LivenessRead,
+    status_code=200,
+    summary="Liveness (legacy path)",
+)
+@router.get(
+    "/live",
+    response_model=LivenessRead,
+    status_code=200,
+    summary="Liveness",
+)
 async def liveness() -> dict[str, str]:
     """Process liveness: the app is up and serving. No dependencies.
 
-    Must never touch DB/Redis — a liveness probe that fails because a
-    dependency is down gets the (healthy) process killed by a restart
-    loop. Both ``/api/health`` (legacy path) and ``/api/health/live``
-    serve this contract; the response shape is the pre-5.9 one.
+    ``GET /api/health`` and ``GET /api/health/live`` are the same
+    contract — the first is the pre-5.9 path kept for the frontend
+    health client, the second the explicit name. Use liveness to decide
+    *whether to restart the process*: it must never touch DB/Redis, so
+    a dependency outage does not get the (healthy) process killed by a
+    restart loop. For "can it serve traffic right now?", use
+    ``GET /api/health/ready`` instead.
     """
     return {"status": "ok"}
 
 
-@router.get("/ready")
+@router.get(
+    "/ready",
+    response_model=ReadinessRead,
+    status_code=200,
+    summary="Readiness",
+    responses={
+        503: {
+            "description": (
+                "Not ready: the database or the redis check failed "
+                "(the body says which; the worker check never gates "
+                "the status)."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "not_ready",
+                        "checks": {
+                            "database": "ok",
+                            "redis": "unavailable",
+                            "worker": "no_recent_heartbeat",
+                        },
+                    }
+                }
+            },
+        }
+    },
+)
 async def readiness() -> JSONResponse:
     """Readiness: required dependencies are available (503 otherwise).
 
-    database + redis gate the status; worker is informational.
+    ``database`` and ``redis`` gate the overall status; ``worker`` is
+    informational only — an absent notification worker must not make
+    the API unready.
     """
     database, redis, worker = await asyncio.gather(
         _check_database(),
@@ -185,19 +227,25 @@ async def readiness() -> JSONResponse:
 # --- metrics endpoint (lives here, not under /api/health — Prometheus ----------
 #     convention is a bare /metrics path at the server root)
 
-metrics_router = APIRouter(tags=["metrics"])
+metrics_router = APIRouter(tags=["Observability"])
 
 
-@metrics_router.get("/metrics")
+@metrics_router.get(
+    "/metrics",
+    response_class=PlainTextResponse,
+    status_code=200,
+    summary="Prometheus metrics (internal only)",
+)
 async def prometheus_metrics() -> Response:
-    """This process's Prometheus exposition (API process).
+    """This process's Prometheus exposition (API process), as text/plain.
 
-    Unauthenticated by design: it is meant for infrastructure scraping
-    on an internal network/port. Protect at the infrastructure level
-    (bind to an internal interface / reverse-proxy ACL) — see
-    docs/01 §10. Exposes counters/histograms only: no request contents,
-    no secrets, no user-identifying values; labels are bounded by
-    construction (app.core.metrics).
+    **Internal-only by design**: unauthenticated and meant for
+    infrastructure scraping on an internal network/port — protect it at
+    the infrastructure level (bind to an internal interface /
+    reverse-proxy ACL), see docs/01 §10. Exposes counters/histograms
+    only: no request contents, no secrets, no user-identifying values;
+    labels are bounded by construction (app.core.metrics). The worker
+    process exposes its own `/metrics`.
     """
     return Response(
         content=metrics_payload(),

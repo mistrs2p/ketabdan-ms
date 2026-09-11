@@ -23,16 +23,50 @@ class LoginRequest(BaseModel):
     secret (minimal policy checked at *creation* time, not login time).
     """
 
-    username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "username": "admin",
+                    "password": "example-password",
+                }
+            ]
+        }
+    )
+
+    username: str = Field(
+        min_length=1,
+        description="Login identifier. Matched case-insensitively "
+        "(normalized to casefold); example value — not a real account.",
+    )
+    password: str = Field(
+        min_length=1,
+        description="The account password, sent as an opaque secret. "
+        "Example value only.",
+    )
 
 
 class TokenResponse(BaseModel):
     """Successful login response (docs/06 §4f)."""
 
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int  # seconds
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    "token_type": "bearer",
+                    "expires_in": 30,
+                }
+            ]
+        }
+    )
+
+    access_token: str = Field(
+        description="Signed JWT access token; send it as "
+        '`Authorization: Bearer <access_token>`. Example value only.'
+    )
+    token_type: str = Field(default="bearer", description='Always "bearer".')
+    expires_in: int = Field(description="Token lifetime in seconds.")
 
 
 class UserCreate(BaseModel):
@@ -52,11 +86,24 @@ class UserRead(BaseModel):
     No hash, no secret material — the public projection of a User.
     """
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                    "username": "admin",
+                    "active": True,
+                }
+            ]
+        },
+    )
 
-    id: UUID
-    username: str
-    active: bool
+    id: UUID = Field(description="The user's stable identifier (token subject).")
+    username: str = Field(description="Canonical (casefolded) login identifier.")
+    active: bool = Field(
+        description="Whether the account may log in and hold valid tokens."
+    )
 
 
 __all__ = [
