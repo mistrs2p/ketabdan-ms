@@ -27,12 +27,14 @@ def restore_root_logging():
     saved_level = root.level
     saved_access_handlers = list(logging.getLogger("uvicorn.access").handlers)
     saved_access_propagate = logging.getLogger("uvicorn.access").propagate
+    saved_arq_level = logging.getLogger("arq.worker").level
     yield
     root.handlers = saved_handlers
     root.setLevel(saved_level)
     access = logging.getLogger("uvicorn.access")
     access.handlers = saved_access_handlers
     access.propagate = saved_access_propagate
+    logging.getLogger("arq.worker").setLevel(saved_arq_level)
 
 
 # --- configuration: LOG_LEVEL setting ------------------------------------------
@@ -116,12 +118,43 @@ def test_configure_logging_silences_uvicorn_access_log() -> None:
 
 def test_configure_logging_leaves_library_loggers_propagating() -> None:
     # arq.worker (and friends) must flow to the root handler unchanged —
-    # no per-library handlers, no disabled loggers.
+    # no per-library handlers, no disabled loggers. (arq.worker's LEVEL
+    # is pinned separately, below — propagation is unaffected by that.)
     configure_logging()
     for name in ("arq.worker", "uvicorn.error", "app.worker.delivery"):
         logger = logging.getLogger(name)
         assert logger.handlers == []
         assert logger.propagate is True
+
+
+def test_configure_logging_pins_arq_worker_above_info(caplog) -> None:
+    # arq's job-start INFO lines embed the serialized job arguments — for
+    # notification jobs that is the recipient address and the message
+    # text, which §9.4 locks as never-logged content (verified live in
+    # Task 5.14: the unpatched worker printed them). The logger is pinned
+    # to WARNING: INFO lines are dropped at the source, while arq's
+    # ERROR lines (job failed — no arguments) still propagate.
+    configure_logging()
+    assert logging.getLogger("arq.worker").level == logging.WARNING
+    with caplog.at_level(logging.INFO):
+        logging.getLogger("arq.worker").info(
+            "0.21s → 7d1a0913:deliver_notification("
+            "{'channel': 'telegram', 'address': 'e2e-probe-address-514', "
+            "'text': 'E2E-514 pi…)"
+        )
+        logging.getLogger("arq.worker").error("job failed, no arguments")
+    assert not any(r.levelno == logging.INFO for r in caplog.records)
+    assert any(r.levelno == logging.ERROR for r in caplog.records)
+
+
+def test_arq_pin_survives_a_later_root_level_raise(caplog) -> None:
+    # Redaction must not depend on verbosity: a second configure_logging
+    # call raising the root level to DEBUG (tests do this) must not
+    # re-enable arq's argument-embedding INFO lines.
+    configure_logging(level="INFO")
+    configure_logging(level="DEBUG")
+    assert logging.getLogger().level == logging.DEBUG
+    assert logging.getLogger("arq.worker").level == logging.WARNING
 
 
 # --- the shared format ----------------------------------------------------------
