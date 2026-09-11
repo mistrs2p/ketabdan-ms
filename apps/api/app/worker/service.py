@@ -62,8 +62,11 @@ class BackgroundNotificationService:
     def _redis_settings(self) -> RedisSettings:
         """Redis connection settings derived from the environment URL —
         never from notification data. Unknown DSN schemes are a
-        configuration error and fail cleanly."""
-        redis_settings = RedisSettings.from_dsn(self._settings.redis_url)
+        configuration error and fail cleanly. The URL is unwrapped from
+        its SecretStr here (Task 5.10) — its single point of use."""
+        redis_settings = RedisSettings.from_dsn(
+            self._settings.redis_url.get_secret_value()
+        )
         redis_settings.conn_timeout = POOL_CONN_TIMEOUT_SECONDS
         redis_settings.conn_retries = POOL_CONN_RETRIES
         redis_settings.conn_retry_delay = POOL_CONN_RETRY_DELAY_SECONDS

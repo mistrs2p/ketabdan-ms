@@ -33,7 +33,11 @@ def get_engine() -> Engine:
             "DATABASE_URL is not set; configure it (see apps/api/.env.example) "
             "before using database features."
         )
-    return create_engine(database_url, pool_pre_ping=True)
+    # The URL may embed credentials (SecretStr since Task 5.10); unwrapped
+    # here, at its single point of use.
+    return create_engine(
+        database_url.get_secret_value(), pool_pre_ping=True
+    )
 
 
 @lru_cache

@@ -1,10 +1,10 @@
-"""PostgreSQL-backed tests for the 0003 seed-initial-responsibilities
+﻿"""PostgreSQL-backed tests for the 0003 seed-initial-responsibilities
 migration.
 
 Mirrors tests/test_seed_migration.py (the 0002 role-seed tests): run the
 real Alembic migration chain (0001 + 0002 + 0003) against a **disposable
 database** created on the configured PostgreSQL server and dropped
-afterwards — the persistent development database is never modified. They
+afterwards â€” the persistent development database is never modified. They
 verify the migration lifecycle (upgrade / downgrade / re-upgrade) plus
 idempotency of the seed insert, against actual PostgreSQL behavior.
 
@@ -73,7 +73,7 @@ def disposable_db_engine():
     CREATE/DROP DATABASE statements on the same server; the development
     database itself is never migrated or modified by these tests.
     """
-    database_url = get_settings().database_url
+    database_url = get_settings().database_url.get_secret_value()
     if not database_url:
         pytest.skip("DATABASE_URL is not configured")
 
@@ -142,10 +142,10 @@ def test_upgrade_seeds_exactly_the_six_initial_responsibilities(
     # Stable migration-owned identities.
     migration = _load_migration_module()
     assert {row["id"] for row in rows} == set(migration.SEED_RESPONSIBILITY_IDS)
-    # Seeded active (docs/03 §5.5 — the only lifecycle mechanism that exists;
+    # Seeded active (docs/03 Â§5.5 â€” the only lifecycle mechanism that exists;
     # retire/reactivate rules are TBD-S2).
     assert all(row["active"] is True for row in rows)
-    # Audit timestamps filled by the existing database defaults (docs/03 §4).
+    # Audit timestamps filled by the existing database defaults (docs/03 Â§4).
     assert all(row["created_at"] is not None for row in rows)
     assert all(row["updated_at"] is not None for row in rows)
 
@@ -209,7 +209,7 @@ def test_downgrade_removes_only_seeded_rows_and_reupgrade_recreates(
 def test_seed_does_not_touch_roles(
     alembic_config, disposable_db_engine
 ) -> None:
-    """D-004 seeds responsibilities only — the roles seed (0002) is untouched."""
+    """D-004 seeds responsibilities only â€” the roles seed (0002) is untouched."""
     command.upgrade(alembic_config, "head")
 
     with disposable_db_engine.connect() as connection:

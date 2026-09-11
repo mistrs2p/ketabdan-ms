@@ -1,12 +1,12 @@
-"""Authentication tests — lock the Phase 5.1 contract (docs/06 §4f).
+﻿"""Authentication tests â€” lock the Phase 5.1 contract (docs/06 Â§4f).
 
 Behavioral locks, in the style of test_api_error_policy.py: every auth
 failure (wrong password, unknown user, inactive, missing/malformed/
-invalid/expired token) must be an indistinguishable generic 401 — no
+invalid/expired token) must be an indistinguishable generic 401 â€” no
 user enumeration, no 500s, no leaked internals. Positive paths pin the
 login body shape, the /me projection (no hash), and token claims.
 
-All tests run against the in-memory SQLite fixture (conftest.py) — no
+All tests run against the in-memory SQLite fixture (conftest.py) â€” no
 test user ever reaches the development PostgreSQL database.
 """
 
@@ -81,7 +81,7 @@ def test_login_wrong_password_is_generic_401(
 
 
 def test_login_unknown_user_same_generic_401(client: TestClient) -> None:
-    # Same status AND same body as the wrong-password case — callers
+    # Same status AND same body as the wrong-password case â€” callers
     # cannot distinguish "user exists" from "user unknown".
     response = client.post(
         "/api/auth/login", json={"username": "no-such-user", "password": "whatever1"}
@@ -123,7 +123,7 @@ def test_me_with_valid_token_returns_user_without_hash(
     assert body["id"] == str(existing_user.id)
     assert body["username"] == USERNAME
     assert body["active"] is True
-    # Security rule (§4f): the hash never appears anywhere in the response.
+    # Security rule (Â§4f): the hash never appears anywhere in the response.
     assert "password_hash" not in body
     assert existing_user.password_hash not in response.text
 
@@ -143,7 +143,7 @@ def test_me_with_malformed_token_is_401(client: TestClient) -> None:
 
 
 def test_me_with_wrong_signature_token_is_401(client: TestClient) -> None:
-    # Signed with the wrong secret — must fail verification, not 500.
+    # Signed with the wrong secret â€” must fail verification, not 500.
     forged, _ = security.create_access_token(
         subject="someone",
         secret_key="a-completely-different-secret-key",
@@ -160,10 +160,10 @@ def test_me_with_wrong_signature_token_is_401(client: TestClient) -> None:
 def test_me_with_expired_token_is_401(
     client: TestClient, existing_user: User
 ) -> None:
-    # Issued and already expired — expiry must be enforced.
+    # Issued and already expired â€” expiry must be enforced.
     expired, _ = security.create_access_token(
         subject=str(existing_user.id),
-        secret_key=get_settings().auth_secret_key,
+        secret_key=get_settings().auth_secret_key.get_secret_value(),
         algorithm=get_settings().auth_algorithm,
         expires_delta=timedelta(seconds=-60),
     )
@@ -180,7 +180,7 @@ def test_me_with_valid_token_for_deleted_user_is_401(
     # A structurally valid token whose subject no longer exists.
     token, _ = security.create_access_token(
         subject="00000000-0000-0000-0000-000000000000",
-        secret_key=get_settings().auth_secret_key,
+        secret_key=get_settings().auth_secret_key.get_secret_value(),
         algorithm=get_settings().auth_algorithm,
         expires_delta=timedelta(minutes=5),
     )
@@ -202,7 +202,7 @@ def test_issued_token_contains_identity_and_expiry(
 
     payload = jwt.decode(
         token,
-        get_settings().auth_secret_key,
+        get_settings().auth_secret_key.get_secret_value(),
         algorithms=[get_settings().auth_algorithm],
     )
 

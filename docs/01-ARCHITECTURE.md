@@ -212,7 +212,7 @@ Rules of the boundary:
 |---|---|
 | Environment separation | At minimum: local development, production. A staging environment is **TBD**. |
 | Configuration values | Database connection settings, service ports, environment flags — kept **outside code** and injected per environment (`.env`-style files locally; real secrets never committed). |
-| Secrets management | Production secrets come from the deployment environment, not from files in the repo. Specific provider/mechanism **TBD**. |
+| Secrets management | Production secrets come from the deployment environment (injected as environment variables — no secret manager), not from files in the repo. See §11 (implemented — Task 5.10). |
 | Database per environment | Each environment gets its own PostgreSQL instance/database; no shared databases across environments. |
 | Migrations | The backend owns schema changes and applies them in a controlled, repeatable way. Specific migration tooling is **TBD**. |
 | Frontend configuration | The Next.js app receives its environment-specific values (e.g., backend base URL) at build/deploy time — not hardcoded. |
@@ -691,3 +691,138 @@ OpenTelemetry, Sentry, a Prometheus **server**, Grafana, Loki, Tempo,
 alerting, distributed tracing, an audit database, notification delivery
 history, DB-query/Redis-command metrics, and any frontend observability
 UI. What exists is the exposition foundation those would build on.
+
+## 11. Configuration & Secrets (implemented — Task 5.10)
+
+Task 5.10 hardens `app/core/config.py` (the single `Settings` surface —
+no scattered `os.environ` reads) around one principle: **the application
+must fail closed rather than silently run with a dangerous
+configuration.** All runtime configuration flows through
+`pydantic-settings` `Settings` with a typed, validated model; every
+setting whose value is (or may embed) a credential is a
+`pydantic.SecretStr`.
+
+### 11.1 APP_ENV
+
+- `APP_ENV` selects the environment: `development` | `test` |
+  `production` (case-insensitive; default `development`).
+- **Never inferred** — not from `DEBUG`, not from the hostname, not
+  from anything else. A typo'd value (`prod`, `staging`, an empty
+  string) is a validation error at startup, never a guess.
+- Development/test keep every documented convenience below; production
+  adds the requirements in §11.2 and fails to start otherwise.
+
+### 11.2 Required in production (fail-closed at startup)
+
+The API refuses to start (`ConfigurationError` raised from Settings
+construction — before the server serves anything) in `production` when
+any of the following holds:
+
+| Requirement | Rejected condition |
+|---|---|
+| `AUTH_SECRET_KEY` real | is the development placeholder, or shorter than 32 characters |
+| `AUTH_ALLOW_INSECURE_DEV_SECRET=0` | the flag is enabled (whatever the secret is) |
+| `DATABASE_URL` set | unset (`None`) |
+| `REDIS_URL` set **explicitly** | relying on the localhost default (an explicitly-set localhost Redis is a legitimate same-host deployment) |
+| `CORS_ALLOW_ORIGINS` explicit | any entry is `*` |
+
+Outside production, the local-development conveniences still work:
+the placeholder secret (with the flag on), omitted `DATABASE_URL`
+(health endpoints still serve), the default Redis URL, and a wildcard
+CORS origin (`allow_credentials` is always False — bearer auth, no
+cookies — so a dev wildcard is not credential-exposing).
+
+There are deliberately **no other debug/insecure flags** in the
+codebase: no `DEBUG` toggle, no flag to weaken auth, no option to
+disable validation. OpenAPI stays enabled in production (see §11.8).
+
+### 11.3 Setting categories
+
+- **Non-secret runtime config** — `APP_ENV`, `API_HOST`, `API_PORT`,
+  `AUTH_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `LOG_LEVEL`,
+  `CORS_ALLOW_ORIGINS`, `NOTIFICATION_TIMEOUT_SECONDS`,
+  `NOTIFICATION_MAX_ATTEMPTS`, retry delays, `WORKER_METRICS_PORT`.
+- **Secrets (SecretStr)** — `AUTH_SECRET_KEY` (JWT signing key),
+  `TELEGRAM_BOT_TOKEN`, `BALE_BOT_TOKEN`.
+- **URLs that may embed credentials (SecretStr)** — `DATABASE_URL`,
+  `REDIS_URL` (both can carry `user:password@`).
+- **Infrastructure (docker-compose, root `.env`)** — `POSTGRES_*`
+  variables; `extra="ignore"` means they never crash Settings even
+  though the application does not use them.
+
+All three notification-ish providers remain **optional in every
+environment, including production**: the core application never
+requires Telegram or Bale credentials. Telegram may be configured
+without Bale and vice versa; an unconfigured provider reports a
+provider-unavailable failure only when a send is attempted (unchanged
+from Task 5.6).
+
+### 11.4 Secret handling policy
+
+- Secret values live as `SecretStr`: `repr()`/`str()` of Settings show
+  `**********`, and `model_dump()` masks them.
+- Consumers unwrap with `get_secret_value()` at the **single point of
+  use** (`app/services/auth.py`, the notification factory,
+  `app/db/session.py`, `app/api/health.py`, the worker, Alembic's
+  `env.py`) — never into a module global, never into a log line.
+- **Configuration errors never echo the offending value.** Policy
+  validators raise `ConfigurationError` (a `RuntimeError`, NOT a
+  `ValueError`): pydantic renders `ValueError`-style validator
+  failures with an `input_value=...` suffix that can contain the raw
+  credential, while a non-ValueError propagates verbatim with only
+  our clean message. `hide_input_in_errors=True` covers pydantic's own
+  type-validation errors the same way. Every error message names the
+  setting and the requirement — never the value.
+- `DATABASE_URL`/`REDIS_URL` are validated by **shape only**
+  (SQLAlchemy `make_url` / scheme check) — no connection is made
+  during Settings construction. Configuration validation ≠ connectivity
+  validation; connectivity is readiness' concern (§10.1).
+- The JWT secret is explicitly configured, never auto-generated, never
+  rotated by the application, and never logged, never in validation
+  errors, never in `/metrics`, never in health responses.
+
+### 11.5 CORS
+
+Comma-separated origins (`cors_origins_list`); every entry must be an
+`http(s)` URL or `*`. Production must not use `*` (§11.2). Safe
+development defaults: `http://localhost:3000,http://127.0.0.1:3000`.
+An empty value disables the CORS middleware entirely (no origins are
+then allowed, since the frontend calls the API directly from the
+browser — see §4).
+
+### 11.6 `.env` rules
+
+- `apps/api/.env.example` is the documented template — safe values
+  only, no token-like fakes; committed.
+- `apps/api/.env` (and the root `.env`) are **not tracked**; real
+  credentials never enter the repository.
+- Tests construct Settings with `_env_file=None` so a developer's real
+  `.env` can never influence the suite.
+- Production-only validation never breaks the test suite: tests run
+  under `APP_ENV` development/test defaults, and the production rules
+  have their own dedicated test matrix
+  (`tests/test_config_hardening.py`).
+
+### 11.7 Production secret injection (deployment-time)
+
+There is **no secret manager and deliberately so** (§11.8): production
+secrets should be injected as environment variables by the deployment
+platform (systemd `EnvironmentFile=`, Docker/Kubernetes secrets
+mounted as env, the platform's equivalent). Where to put what:
+
+- `AUTH_SECRET_KEY` — generate with `secrets.token_urlsafe(48)` once,
+  inject as an env var, ≥32 characters.
+- `DATABASE_URL` / `REDIS_URL` — full connection URLs (with
+  credentials) as env vars.
+- `TELEGRAM_BOT_TOKEN` / `BALE_BOT_TOKEN` — only if those channels are
+  actually used; both optional.
+- Nothing secret is ever stored in the application database (no
+  database-stored secrets, no encrypted-blob store).
+
+### 11.8 Explicitly out of scope (Task 5.10)
+
+Vault, AWS Secrets Manager, Doppler, or any other secret manager;
+secret rotation; CI secrets; an auth redesign or JWT migration; audit
+logging; observability changes; disabling OpenAPI in production (the
+schema is public API documentation — protecting it is an
+infrastructure-level decision, out of scope here).

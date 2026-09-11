@@ -13,7 +13,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
+from app.core.config import AUTH_SECRET_PLACEHOLDER, get_settings
 from app.core.security import (
     create_access_token,
     decode_access_token,
@@ -90,11 +90,13 @@ def ensure_secure_auth_secret() -> None:
     The placeholder default in ``app.core.config`` exists only so the app
     can start for local development; anything that actually *issues or
     verifies* tokens must pass this check. Production sets
-    ``AUTH_ALLOW_INSECURE_DEV_SECRET=0`` (or simply a real secret).
+    ``AUTH_ALLOW_INSECURE_DEV_SECRET=0`` (or simply a real secret) — and
+    production Settings validation rejects the placeholder (and the flag
+    itself) at startup, so this guard is the belt to that suspenders.
     """
     settings = get_settings()
     if (
-        settings.auth_secret_key == "change-me-insecure-dev-placeholder"
+        settings.auth_secret_key.get_secret_value() == AUTH_SECRET_PLACEHOLDER
         and not settings.auth_allow_insecure_dev_secret
     ):
         raise InsecureSecretError(
@@ -143,7 +145,7 @@ def issue_access_token(user: User) -> tuple[str, int]:
     settings = get_settings()
     return create_access_token(
         subject=str(user.id),
-        secret_key=settings.auth_secret_key,
+        secret_key=settings.auth_secret_key.get_secret_value(),
         algorithm=settings.auth_algorithm,
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
     )
@@ -162,7 +164,7 @@ def resolve_token_subject(*, token: str) -> str:
     try:
         return decode_access_token(
             token=token,
-            secret_key=settings.auth_secret_key,
+            secret_key=settings.auth_secret_key.get_secret_value(),
             algorithm=settings.auth_algorithm,
         )
     except CoreInvalidTokenError as exc:

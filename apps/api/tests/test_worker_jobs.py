@@ -211,7 +211,7 @@ def test_serializer_preserves_unicode() -> None:
 def test_default_configuration() -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.redis_url == "redis://localhost:6390/0"
+    assert settings.redis_url.get_secret_value() == "redis://localhost:6390/0"
     assert settings.notification_max_attempts == 5
     assert settings.notification_retry_base_delay_seconds == 5.0
     assert settings.notification_retry_max_delay_seconds == 300.0
@@ -222,11 +222,13 @@ def test_custom_redis_url() -> None:
         _env_file=None, redis_url="redis://redis.example:6380/2"
     )
 
-    assert settings.redis_url == "redis://redis.example:6380/2"
+    assert settings.redis_url.get_secret_value() == "redis://redis.example:6380/2"
 
 
 def test_invalid_retry_config_rejected_cleanly() -> None:
     from pydantic import ValidationError
+
+    from app.core.config import ConfigurationError
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None, notification_max_attempts=0)
@@ -234,7 +236,10 @@ def test_invalid_retry_config_rejected_cleanly() -> None:
         Settings(_env_file=None, notification_retry_base_delay_seconds=0)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, notification_retry_max_delay_seconds=-1)
-    with pytest.raises(ValidationError):
+    # The cross-field cap check raises ConfigurationError (Task 5.10):
+    # a policy violation, not a type error — and its message never
+    # echoes raw input values.
+    with pytest.raises(ConfigurationError):
         Settings(
             _env_file=None,
             notification_retry_base_delay_seconds=60.0,

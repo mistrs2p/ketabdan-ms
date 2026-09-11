@@ -1,4 +1,4 @@
-"""Authorization tests — lock the Phase 5.2 contract (docs/06 §4g).
+﻿"""Authorization tests â€” lock the Phase 5.2 contract (docs/06 Â§4g).
 
 The matrix in one place: every business route requires a permission;
 authentication failures (missing/invalid/expired token, inactive user) are
@@ -8,7 +8,7 @@ own constants (the way test_api_persons mirrors the 0002 seeds), and the
 union semantics across multiple roles are exercised both at the service
 level and over HTTP.
 
-All tests run against the in-memory SQLite fixture (conftest.py) — no test
+All tests run against the in-memory SQLite fixture (conftest.py) â€” no test
 user ever reaches the development PostgreSQL database.
 """
 
@@ -45,7 +45,7 @@ def auth_header(user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-# All nine protected business routes (docs/06 §4g). The payloads are valid
+# All nine protected business routes (docs/06 Â§4g). The payloads are valid
 # or well-formed-unknown: after the permission gate, whatever status the
 # handler returns proves the gate itself passed.
 PROTECTED_ROUTES: tuple[tuple[str, str, dict | None], ...] = (
@@ -105,7 +105,7 @@ def test_protected_route_with_expired_token_is_401(
     user = make_user_with_roles(session, "expired-admin", role_codes=("admin",))
     expired, _ = security.create_access_token(
         subject=str(user.id),
-        secret_key=get_settings().auth_secret_key,
+        secret_key=get_settings().auth_secret_key.get_secret_value(),
         algorithm=get_settings().auth_algorithm,
         expires_delta=timedelta(seconds=-60),
     )
@@ -117,7 +117,7 @@ def test_protected_route_with_expired_token_is_401(
 def test_inactive_user_is_401_on_protected_route(
     client: TestClient, session: Session, authz_seeded: None
 ) -> None:
-    # Inactive is an authentication-level rejection (§4f), never a 403 —
+    # Inactive is an authentication-level rejection (Â§4f), never a 403 â€”
     # and never a silent pass despite the held permissions.
     user = make_user_with_roles(session, "gone-admin", role_codes=("admin",))
     user.active = False
@@ -144,7 +144,7 @@ def test_authenticated_user_without_roles_is_403_everywhere(
     path: str,
     payload: dict | None,
 ) -> None:
-    # Valid login, zero application roles → no permissions at all: every
+    # Valid login, zero application roles â†’ no permissions at all: every
     # business route denies, with the generic detail.
     user = make_user_with_roles(session, "plain-user")
 
@@ -157,7 +157,7 @@ def test_authenticated_user_without_roles_is_403_everywhere(
 def test_403_detail_never_names_the_missing_permission(
     client: TestClient, session: Session, authz_seeded: None
 ) -> None:
-    # §4g: the denial reveals nothing about *which* permission was needed.
+    # Â§4g: the denial reveals nothing about *which* permission was needed.
     user = make_user_with_roles(session, "plain-user")
 
     response = client.get("/api/persons", headers=auth_header(user))
@@ -171,8 +171,8 @@ def test_403_detail_never_names_the_missing_permission(
 def test_operator_is_denied_only_people_create(
     client: TestClient, session: Session, authz_seeded: None
 ) -> None:
-    # The one deliberate difference in the seeded matrix (docs/06 §4g):
-    # operator lacks people:create. An unrelated-role denial in practice —
+    # The one deliberate difference in the seeded matrix (docs/06 Â§4g):
+    # operator lacks people:create. An unrelated-role denial in practice â€”
     # the role exists, the permission does not attach to it.
     operator = make_user_with_roles(session, "day-operator", role_codes=("operator",))
     headers = auth_header(operator)
@@ -289,7 +289,7 @@ def test_user_can_hold_multiple_roles_with_unioned_permissions(
     client: TestClient, session: Session, authz_seeded: None
 ) -> None:
     # operator (six permissions, no people:create) plus a minimal extra
-    # role holding only people:create — the union is the full set.
+    # role holding only people:create â€” the union is the full set.
     add_role_with_permissions(
         session, "roster-clerk", "Roster Clerk", (authz.PEOPLE_CREATE,)
     )
@@ -356,7 +356,7 @@ def test_seeded_role_permission_matrix_is_correct(
         )
         assert authz.user_permission_codes(session, user=user) == permission_codes
 
-    # 7 + 7 + 6 rows in the matrix — no stray grants, none missing.
+    # 7 + 7 + 6 rows in the matrix â€” no stray grants, none missing.
     total = len(session.scalars(select(ApplicationRolePermission)).all())
     assert total == 20
 
@@ -431,7 +431,7 @@ def test_login_remains_public(
 def test_me_still_works_for_user_without_any_role(
     client: TestClient, session: Session, authz_seeded: None
 ) -> None:
-    # /me is authenticated-only (§4f): zero permissions change nothing.
+    # /me is authenticated-only (Â§4f): zero permissions change nothing.
     user = make_user_with_roles(session, "me-only")
 
     response = client.get("/api/auth/me", headers=auth_header(user))
@@ -443,10 +443,10 @@ def test_me_still_works_for_user_without_any_role(
 def test_business_roles_are_unrelated_to_application_roles(
     session: Session, authz_seeded: None
 ) -> None:
-    # The Phase 3 domain roles (roles table — learner/supporter/…) and the
+    # The Phase 3 domain roles (roles table â€” learner/supporter/â€¦) and the
     # Phase 5 application roles are separate tables with separate codes; a
     # Person's business role grants no permission, and an application role
-    # says nothing about a Person (there is no required User↔Person link).
+    # says nothing about a Person (there is no required Userâ†”Person link).
     from app.models import Role
 
     session.add(Role(code="manager", name="Manager"))  # the *domain* manager

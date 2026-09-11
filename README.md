@@ -274,6 +274,30 @@ recipients, tokens, or query strings; health/metrics paths themselves
 are unmetered. Instrumentation failures are swallowed: observability
 can never take the app down.
 
+Task 5.10 hardened the **production configuration and secrets story**
+(docs/01 §11): the application now **fails closed** rather than
+silently running with a dangerous configuration. `APP_ENV`
+(`development` | `test` | `production`, case-insensitive, never
+inferred) selects the environment; in production, Settings
+construction rejects the placeholder or a short (`<32` chars)
+`AUTH_SECRET_KEY`, the `AUTH_ALLOW_INSECURE_DEV_SECRET` flag, a
+missing `DATABASE_URL`, an unset `REDIS_URL`, and wildcard CORS —
+with a clear `ConfigurationError` before the server serves anything.
+Every credential-bearing setting (JWT key, bot tokens, and the DB and
+Redis URLs, which can embed `user:password@`) is a `SecretStr`;
+configuration errors name the setting and the requirement but never
+echo the value (pydantic's `input_value=...` leaking is defeated by
+raising `RuntimeError`-based errors and
+`hide_input_in_errors=True`). URL validation is shape-only — no
+connection is made during Settings construction (connectivity stays
+readiness' job, per 5.9). Telegram/Bale tokens stay optional in every
+environment, one without the other is fine, and the core app never
+requires notification credentials. Local development keeps every
+documented convenience, including the placeholder secret with the
+explicit flag. No secret manager was added (deployment injects
+secrets as environment variables — see docs/01 §11.7), no secrets are
+stored in the database, and no new dependencies were introduced.
+
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark
 theming, the typed API client layer (`apps/web/lib/api/`), and the

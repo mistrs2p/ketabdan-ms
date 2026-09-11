@@ -1,8 +1,8 @@
-"""PostgreSQL-backed tests for the 0005 authorization-seed migration.
+﻿"""PostgreSQL-backed tests for the 0005 authorization-seed migration.
 
-Runs the real Alembic migration chain (0001 → 0005) against a **disposable
+Runs the real Alembic migration chain (0001 â†’ 0005) against a **disposable
 database** created on the configured PostgreSQL server and dropped
-afterwards — the persistent development database is never modified. Verifies
+afterwards â€” the persistent development database is never modified. Verifies
 the migration lifecycle (upgrade / downgrade / re-upgrade), the exact seeded
 matrix, and idempotency of the seed inserts, against actual PostgreSQL
 behavior. The test_seed_migration.py pattern, applied to the authorization
@@ -37,7 +37,7 @@ EXPECTED_ROLES: dict[str, str] = {
     "operator": "Operator",
 }
 
-# The seeded matrix (docs/06 §4g): operator is everything but people:create.
+# The seeded matrix (docs/06 Â§4g): operator is everything but people:create.
 OPERATOR_MISSING = "people:create"
 ALL_CODES = {
     "roles:read",
@@ -92,7 +92,7 @@ def disposable_db_engine():
     CREATE/DROP DATABASE statements on the same server; the development
     database itself is never migrated or modified by these tests.
     """
-    database_url = get_settings().database_url
+    database_url = get_settings().database_url.get_secret_value()
     if not database_url:
         pytest.skip("DATABASE_URL is not configured")
 
@@ -181,7 +181,7 @@ def test_upgrade_seeds_the_exact_authorization_matrix(
     }
     assert matrix == expected_matrix
 
-    # Audit timestamps filled by the database defaults (docs/03 §4).
+    # Audit timestamps filled by the database defaults (docs/03 Â§4).
     assert all(row["created_at"] is not None for row in roles)
     assert all(row["updated_at"] is not None for row in roles)
 
