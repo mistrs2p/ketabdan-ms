@@ -1,8 +1,8 @@
-"""PostgreSQL-backed tests for the 0002 seed-initial-roles migration.
+﻿"""PostgreSQL-backed tests for the 0002 seed-initial-roles migration.
 
 These tests run the real Alembic migration chain (0001 + 0002) against a
 **disposable database** created on the configured PostgreSQL server and
-dropped afterwards — the persistent development database is never modified.
+dropped afterwards â€” the persistent development database is never modified.
 They verify the migration lifecycle itself (upgrade / downgrade / re-upgrade)
 plus idempotency of the seed insert, against actual PostgreSQL behavior.
 
@@ -64,7 +64,7 @@ def disposable_db_engine():
     CREATE/DROP DATABASE statements on the same server; the development
     database itself is never migrated or modified by these tests.
     """
-    database_url = get_settings().database_url
+    database_url = get_settings().database_url.get_secret_value()
     if not database_url:
         pytest.skip("DATABASE_URL is not configured")
 
@@ -131,7 +131,7 @@ def test_upgrade_seeds_exactly_the_six_confirmed_roles(
     # Stable migration-owned identities.
     migration = _load_migration_module()
     assert {row["id"] for row in rows} == set(migration.SEED_ROLE_IDS)
-    # Audit timestamps filled by the existing database defaults (docs/03 §4).
+    # Audit timestamps filled by the existing database defaults (docs/03 Â§4).
     assert all(row["created_at"] is not None for row in rows)
     assert all(row["updated_at"] is not None for row in rows)
 

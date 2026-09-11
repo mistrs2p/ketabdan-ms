@@ -89,14 +89,14 @@ async def _check_redis() -> str:
     """Redis reachable — one PING on a short-lived client.
 
     The URL comes from the same ``redis_url`` setting as Task 5.7 (no
-    duplicated configuration); the client is created per check with
-    bounded socket timeouts and always closed. No global Redis client is
-    created at import time.
+    duplicated configuration; unwrapped from its SecretStr here — Task
+    5.10); the client is created per check with bounded socket timeouts
+    and always closed. No global Redis client is created at import time.
     """
     settings = get_settings()
     try:
         client = aioredis.Redis.from_url(
-            settings.redis_url,
+            settings.redis_url.get_secret_value(),
             socket_connect_timeout=REDIS_CHECK_TIMEOUT_SECONDS,
             socket_timeout=REDIS_CHECK_TIMEOUT_SECONDS,
         )
@@ -122,7 +122,7 @@ async def _check_worker_heartbeat() -> str:
     settings = get_settings()
     try:
         client = aioredis.Redis.from_url(
-            settings.redis_url,
+            settings.redis_url.get_secret_value(),
             socket_connect_timeout=REDIS_CHECK_TIMEOUT_SECONDS,
             socket_timeout=REDIS_CHECK_TIMEOUT_SECONDS,
         )

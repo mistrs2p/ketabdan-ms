@@ -16,6 +16,7 @@ Task 5.7 background delivery will build on.
 """
 
 import httpx2
+from pydantic import SecretStr
 
 from app.core.config import Settings
 from app.notifications.bale import BaleNotificationProvider
@@ -23,6 +24,19 @@ from app.notifications.dispatcher import NotificationDispatcher
 from app.notifications.models import NotificationChannel
 from app.notifications.providers import NotificationProvider
 from app.notifications.telegram import TelegramNotificationProvider
+
+
+def _token_or_none(token: SecretStr | None) -> str | None:
+    """Unwrap a secret bot token for the provider; empty → unconfigured.
+
+    The single point where the token leaves its SecretStr wrapper; the
+    value is passed straight into the provider (never logged, never in
+    error text). Empty string (an unset ".env" value) means "not
+    configured" — exactly the pre-5.10 semantics.
+    """
+    if token is None:
+        return None
+    return token.get_secret_value() or None
 
 
 def build_notification_dispatcher(
@@ -35,18 +49,14 @@ def build_notification_dispatcher(
     ``transport`` is a test seam (mocked HTTP transport); production
     leaves it ``None`` so providers use real networking.
     """
-    # Empty string (an unset ".env" value) means "not configured".
-    telegram_token = settings.telegram_bot_token or None
-    bale_token = settings.bale_bot_token or None
-
     providers: dict[str, NotificationProvider] = {
         str(NotificationChannel.TELEGRAM): TelegramNotificationProvider(
-            bot_token=telegram_token,
+            bot_token=_token_or_none(settings.telegram_bot_token),
             timeout_seconds=settings.notification_timeout_seconds,
             transport=transport,
         ),
         str(NotificationChannel.BALE): BaleNotificationProvider(
-            bot_token=bale_token,
+            bot_token=_token_or_none(settings.bale_bot_token),
             timeout_seconds=settings.notification_timeout_seconds,
             transport=transport,
         ),

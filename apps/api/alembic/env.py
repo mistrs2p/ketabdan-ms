@@ -37,14 +37,15 @@ configure_logging(level=get_settings().log_level)
 
 # Resolve the URL from the application settings. Failing early with a clear
 # message is better than a confusing "could not parse URL" deep inside
-# SQLAlchemy.
+# SQLAlchemy. (SecretStr since Task 5.10 — unwrapped here, its single
+# point of use in migrations.)
 database_url = get_settings().database_url
 if not database_url:
     raise RuntimeError(
         "DATABASE_URL is not set; configure it (see apps/api/.env.example) "
         "before running migrations."
     )
-config.set_main_option("sqlalchemy.url", database_url)
+config.set_main_option("sqlalchemy.url", database_url.get_secret_value())
 
 target_metadata = Base.metadata
 
