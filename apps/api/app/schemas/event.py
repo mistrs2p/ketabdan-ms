@@ -18,15 +18,34 @@ and recurrence (TBD-D6) is not modeled.
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class EventCreate(BaseModel):
     """Request body for ``POST /api/events`` (docs/06 §4c)."""
 
-    title: str
-    type: str
-    planned_at: datetime
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "title": "Weekly book club session",
+                    "type": "book-club",
+                    "planned_at": "2026-09-19T17:00:00+03:30",
+                }
+            ]
+        }
+    )
+
+    title: str = Field(description="Event title. Rules are TBD-D25 (free text).")
+    type: str = Field(
+        description="Event type. Free text — the taxonomy is TBD-D5/D26, "
+        "so no allowed-value list is enforced. Example value only."
+    )
+    planned_at: datetime = Field(
+        description="Planned instant. **Must be timezone-aware** (include "
+        'an offset, e.g. "2026-09-19T17:00:00+03:30"); naive datetimes '
+        "are rejected with 422. Past values are accepted (TBD-D27)."
+    )
 
     @field_validator("planned_at")
     @classmethod
@@ -45,10 +64,28 @@ class EventCreate(BaseModel):
 class EventRead(BaseModel):
     """An event, as returned by event endpoints (docs/06 §4c)."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                    "title": "Weekly book club session",
+                    "type": "book-club",
+                    "planned_at": "2026-09-19T17:00:00+03:30",
+                    "status": "DRAFT",
+                }
+            ]
+        },
+    )
 
-    id: UUID
-    title: str
-    type: str
-    planned_at: datetime
-    status: str
+    id: UUID = Field(description="Stable identifier of the event.")
+    title: str = Field(description="Event title.")
+    type: str = Field(description="Event type as stored.")
+    planned_at: datetime = Field(
+        description="Planned instant (timezone-aware)."
+    )
+    status: str = Field(
+        description="Event status. Creation always produces `DRAFT`; "
+        "no status transition exists yet (schema default TBD-D28)."
+    )

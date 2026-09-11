@@ -32,15 +32,23 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import LoginRequest, TokenResponse, UserRead
+from app.schemas.errors import error_response
 from app.services import auth as auth_service
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
+router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 _security_log = logging.getLogger("app.api.security")
 
 # auto_error=False: a missing Authorization header must become our own
 # generic 401, not FastAPI's 403-flavored "Not authenticated" default.
-_bearer_scheme = HTTPBearer(auto_error=False)
+# The description below is what Swagger UI's Authorize dialog shows.
+_bearer_scheme = HTTPBearer(
+    auto_error=False,
+    description=(
+        "JWT access token from `POST /api/auth/login`. "
+        "Paste the token value only — Swagger adds the `Bearer ` prefix."
+    ),
+)
 
 # §4f: one message for every auth failure — nothing about which check.
 GENERIC_401_DETAIL = "Not authenticated"
@@ -138,6 +146,15 @@ def get_current_user(
     "/login",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
+    summary="Log in and obtain an access token",
+    responses={
+        401: error_response(
+            "Credentials rejected — unknown user, wrong password, or "
+            "inactive account. All three produce this identical generic "
+            "body (no user enumeration).",
+            example_detail=auth_service.GENERIC_AUTH_FAILURE,
+        ),
+    },
 )
 def login(
     payload: LoginRequest,
@@ -146,8 +163,11 @@ def login(
 ) -> TokenResponse:
     """Verify credentials and return a signed access token (docs/06 §4f).
 
-    Failures return a generic 401 with the same body for unknown user,
-    wrong password, and inactive account — no user enumeration.
+    The token is a signed JWT with the user id as subject; send it on
+    subsequent calls as `Authorization: Bearer <access_token>`. The
+    username is matched case-insensitively. Failures return a generic
+    401 with the same body for unknown user, wrong password, and
+    inactive account — no user enumeration.
     """
     try:
         user = auth_service.authenticate(
@@ -181,7 +201,20 @@ def login(
     "/me",
     response_model=UserRead,
     status_code=status.HTTP_200_OK,
+    summary="Get the authenticated user",
+    responses={
+        401: error_response(
+            "Missing, malformed, invalid, or expired token, or a token "
+            "whose user no longer exists / is inactive.",
+            example_detail=GENERIC_401_DETAIL,
+        ),
+    },
 )
 def read_current_user(current_user: User = Depends(get_current_user)) -> User:
-    """The authenticated identity — public projection only, no hash."""
+    """The authenticated identity — public projection only, no hash.
+
+    Requires authentication but **no permission** (docs/06 §4g): any
+    active user with a valid token can call it. Returns `{id, username,
+    active}`; the password hash never leaves the server.
+    """
     return current_user
