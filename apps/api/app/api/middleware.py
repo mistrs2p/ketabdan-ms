@@ -1,4 +1,4 @@
-"""HTTP request logging at the FastAPI boundary (Task 5.8).
+"""HTTP request logging + metrics at the FastAPI boundary (Tasks 5.8/5.9).
 
 One log line per request, from a pure-ASGI middleware (no
 ``BaseHTTPMiddleware`` overhead):
@@ -19,6 +19,20 @@ Rules (docs/01 §9):
   exceptions are RE-RAISED here: Starlette's ServerErrorMiddleware and
   the server log the single stack trace, so this middleware never
   duplicates it — it only completes the request line.
+
+Request metrics (Task 5.9, docs/01 §10), recorded in the same middleware
+so one code path observes every request:
+
+- ``http_requests_total{method, route, status_class}``
+- ``http_request_duration_seconds{method, route}`` histogram
+- ``http_requests_in_progress{method}`` gauge
+
+``route`` is the ROUTE TEMPLATE (``/api/persons/{person_id}``) taken from
+``scope["route"]`` which FastAPI sets during routing — never the raw
+path, so label cardinality is bounded by the static route table.
+Unmatched requests collapse to the literal ``unmatched``. Health and
+metrics paths are not metered (self-observability loop). Metric helpers
+never raise (docs/01 §10 error handling).
 """
 
 import logging
@@ -28,6 +42,12 @@ import uuid
 
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from app.core.metrics import (
+    observe_http_request,
+    observe_http_request_end,
+    observe_http_request_start,
+)
 
 logger = logging.getLogger("app.api.request")
 
@@ -72,6 +92,7 @@ class RequestLoggingMiddleware:
 
         status_code = 500  # assumed until http.response.start says otherwise
         start = time.perf_counter()
+        observe_http_request_start(method)
 
         async def send_with_request_id(message: Message) -> None:
             nonlocal status_code
@@ -88,6 +109,18 @@ class RequestLoggingMiddleware:
             raise
         finally:
             duration_ms = (time.perf_counter() - start) * 1000.0
+            observe_http_request_end(method)
+            # scope["route"] is set by FastAPI's router (inside
+            # self.app(...) above) — the route TEMPLATE, not the raw path.
+            # Unmatched requests have no route: the metric layer collapses
+            # them to the literal "unmatched" (bounded cardinality).
+            observe_http_request(
+                method=method,
+                raw_path=path,
+                route_template=scope.get("route"),
+                status_code=status_code,
+                duration_seconds=duration_ms / 1000.0,
+            )
             log = logger.warning if status_code >= 500 else logger.info
             log(
                 "request: %s %s -> %d %.1fms request_id=%s",

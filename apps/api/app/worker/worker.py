@@ -34,6 +34,17 @@ from arq import Retry
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
+from app.core.metrics import (
+    JOB_COMPLETED,
+    JOB_FAILED,
+    JOB_RETRIED,
+    NOTIF_FAILED,
+    NOTIF_REJECTED,
+    NOTIF_RETRYABLE,
+    NOTIF_SUCCESS,
+    observe_job,
+    observe_notification_attempt,
+)
 from app.notifications import NotificationDispatcher, NotificationResult
 from app.notifications.factory import build_notification_dispatcher
 from app.worker.errors import PermanentNotificationFailure
@@ -99,6 +110,7 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
             job_id,
             exc.__class__.__name__,
         )
+        observe_job(DELIVER_FUNCTION_NAME, JOB_FAILED)
         raise PermanentNotificationFailure(
             f"invalid job payload ({exc.__class__.__name__})"
         ) from exc
@@ -108,6 +120,9 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
     duration_ms = (time.perf_counter() - started) * 1000.0
 
     # 3. Classify (Task 5.5/5.6 semantics) and apply the bounded policy.
+    # Metrics observe the classification (bounded labels: function name,
+    # channel, fixed outcome vocabulary — never job ids, recipients, or
+    # error text; docs/01 §10).
     if result.success:
         logger.info(
             "notification delivered: channel=%s category=%s external_id=%s "
@@ -117,6 +132,10 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
             result.external_message_id,
             job_id,
             duration_ms,
+        )
+        observe_job(DELIVER_FUNCTION_NAME, JOB_COMPLETED)
+        observe_notification_attempt(
+            job.channel, NOTIF_SUCCESS, duration_seconds=duration_ms / 1000.0
         )
         return "delivered"
 
@@ -136,6 +155,10 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
             job_id,
             duration_ms,
         )
+        observe_job(DELIVER_FUNCTION_NAME, JOB_FAILED)
+        observe_notification_attempt(
+            job.channel, NOTIF_REJECTED, duration_seconds=duration_ms / 1000.0
+        )
         raise PermanentNotificationFailure(
             f"provider rejected the notification ({result.error_code})"
         )
@@ -151,6 +174,10 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
             job.category,
             result.error_code,
             job_id,
+        )
+        observe_job(DELIVER_FUNCTION_NAME, JOB_FAILED)
+        observe_notification_attempt(
+            job.channel, NOTIF_FAILED, duration_seconds=duration_ms / 1000.0
         )
         raise PermanentNotificationFailure(
             f"delivery failed after {attempt} attempts "
@@ -171,6 +198,10 @@ async def deliver_notification(ctx: dict, payload: dict) -> str:
         job.category,
         job_id,
     )
+    observe_job(DELIVER_FUNCTION_NAME, JOB_RETRIED)
+    observe_notification_attempt(
+        job.channel, NOTIF_RETRYABLE, duration_seconds=duration_ms / 1000.0
+    )
     raise Retry(defer=delay)
 
 
@@ -179,11 +210,25 @@ async def startup(ctx: dict) -> None:
 
     The dispatcher is created once per worker process and shared by all
     jobs through ``ctx`` — constructor injection, no globals.
+
+    Task 5.9: optionally exposes this process's Prometheus metrics on
+    ``WORKER_METRICS_PORT`` (default 0 = disabled) using the library's
+    built-in single-purpose HTTP server. The worker metrics are
+    process-local counters — without this port there is no way to scrape
+    them (the worker serves no HTTP otherwise).
     """
     settings: Settings = get_settings()
     ctx["notification_dispatcher"] = build_notification_dispatcher(settings)
     ctx["notification_retry_policy"] = _retry_policy_from_settings(settings)
     ctx["notification_settings"] = settings
+    if settings.worker_metrics_port:
+        from prometheus_client import start_http_server
+
+        server, thread = start_http_server(settings.worker_metrics_port)
+        ctx["_metrics_server"] = (server, thread)
+        logger.info(
+            "worker metrics exposed on port %d", settings.worker_metrics_port
+        )
     logger.info(
         "notification worker ready (retry policy: max_attempts=%d, "
         "base_delay=%.1fs, max_delay=%.1fs)",
@@ -194,6 +239,13 @@ async def startup(ctx: dict) -> None:
 
 
 async def shutdown(ctx: dict) -> None:
+    server_info = ctx.pop("_metrics_server", None)
+    if server_info is not None:
+        server, _thread = server_info
+        try:
+            server.shutdown()
+        except Exception:  # noqa: BLE001 — shutdown must never raise
+            logger.warning("worker metrics server shutdown failed", exc_info=True)
     logger.info("notification worker shutting down")
 
 
@@ -217,3 +269,8 @@ class WorkerSettings:
     # classification + Retry defer), with arq's max_tries as the outer
     # bound so a bug in the classification can never loop forever.
     max_tries = 25
+    # Worker liveness signal (Task 5.9): arq refreshes <queue>:health in
+    # Redis every 30s with a 31s TTL — the readiness endpoint reads it to
+    # distinguish "Redis reachable" from "a worker process is actually
+    # alive". The default (3600s) would make the heartbeat useless.
+    health_check_interval = 30

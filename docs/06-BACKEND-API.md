@@ -127,7 +127,10 @@ apps/api/app/
 
 | Method | Path | Purpose | Permission (§4g) | Notes |
 | --- | --- | --- | --- | --- |
-| GET | `/api/health` | Liveness check | — public | No database involved; works without `DATABASE_URL` |
+| GET | `/api/health` | Liveness check | — public | No database involved; works without `DATABASE_URL`; pre-5.9 contract kept (`{"status": "ok"}`) — the frontend health client depends on it |
+| GET | `/api/health/live` | Liveness, explicit name (Task 5.9) | — public | Same semantics as `/api/health`; never touches dependencies |
+| GET | `/api/health/ready` | Readiness (Task 5.9; docs/01 §10) | — public | Checks PostgreSQL + Redis with bounded timeouts; `200 {"status": "ok", "checks": {database, redis, worker}}` or `503 {"status": "not_ready", ...}`; `worker` is informational (arq heartbeat key); response carries fixed words only — never URLs, credentials, or exception text |
+| GET | `/metrics` | Prometheus exposition of the API process (Task 5.9) | — public (infrastructure-protected) | Counter/histogram/gauge text format; labels are bounded by construction (route templates, status classes, fixed outcome vocabularies — docs/01 §10.4); protect at the infrastructure level |
 | GET | `/api/roles` | List the permanent organizational roles (reference data, seeded by migration `0002`) | `roles:read` | Read-only; ordered by `code`; returns `[{id, code, name}]` |
 | GET | `/api/persons` | List branch members with their permanent roles (D-001) | `people:read` | Read-only; ordered by `name`, then `id`; returns `[{id, name, phone, active, roles: [{id, code, name}]}]` |
 | POST | `/api/persons` | Create a branch member, optionally with roles (§4a) | `people:create` | First write endpoint; `201 Created` with the `PersonRead` shape; person + memberships written atomically |
@@ -142,9 +145,10 @@ apps/api/app/
 
 Every business route above (roles, persons, events, event-assignments) is
 **permission-protected** since Task 5.2 (§4g): no token → `401`, valid token
-without the required permission → `403`. `/api/health` and
-`POST /api/auth/login` stay public; `GET /api/auth/me` requires
-authentication but no permission.
+without the required permission → `403`. `/api/health`, `/api/health/live`,
+`/api/health/ready`, and `/metrics` stay public (probes and infrastructure
+scraping must work independently of auth; docs/01 §10); `POST /api/auth/login`
+stays public; `GET /api/auth/me` requires authentication but no permission.
 
 Roles are **read-only by design**: the six rows are migration-owned reference
 data (docs/05 §5a). No create/update/delete endpoints exist for them —

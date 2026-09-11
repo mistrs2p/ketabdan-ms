@@ -254,6 +254,26 @@ addresses are never logged — pinned by tests. The worker's logs carry
 job id, attempt, channel, and category for diagnosability. Metrics,
 tracing, and alerting remain out of scope.
 
+Task 5.9 added the **observability foundation** (docs/01 §10): health
+endpoints and Prometheus-compatible metrics, deliberately foundation-only
+(no monitoring stack). `GET /api/health` keeps its pre-existing contract
+while `/api/health/live` (liveness — never touches dependencies, so a
+Redis outage can't restart-loop a healthy process) and
+`/api/health/ready` (readiness — PostgreSQL `SELECT 1` on the existing
+engine plus a Redis `PING`, each under a hard timeout; `503 not_ready`
+when either is down, fixed words only, never exception text) join it.
+The worker's aliveness is reported honestly from arq's Redis heartbeat
+key (`no_recent_heartbeat`, not a false "ok") and is informational, not
+gating. `GET /metrics` (API process) and an optional
+`WORKER_METRICS_PORT` (worker process) expose request
+counters/durations, in-flight gauge, and worker job / notification
+delivery counters via `prometheus-client`. Labels are bounded by
+construction — route templates (never raw paths), status classes, fixed
+outcome vocabularies, validated channels — and never user ids, texts,
+recipients, tokens, or query strings; health/metrics paths themselves
+are unmetered. Instrumentation failures are swallowed: observability
+can never take the app down.
+
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark
 theming, the typed API client layer (`apps/web/lib/api/`), and the

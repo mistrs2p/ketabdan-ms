@@ -550,3 +550,144 @@ Metrics, tracing, OpenTelemetry, Sentry, Prometheus, ELK/Loki/Grafana,
 dashboards, alerting, an audit database, and any frontend logging UI.
 Task 5.8 is logging only; structured logging/observability decisions are
 deferred (T13+ TBDs stay open).
+
+---
+
+## 10. Observability — Health Checks & Metrics (implemented — Task 5.9)
+
+Task 5.9 adds the *foundation* only: health endpoints and
+Prometheus-compatible metrics, via the plain `prometheus-client`
+library (no framework integration package, no monitoring stack — see
+§10.9). Everything here is deliberately boring and bounded.
+
+### 10.1 Health endpoints (`apps/api/app/api/health.py`)
+
+All public (no authentication) — probes must work independently of
+auth:
+
+| Endpoint | Meaning | Checks dependencies? | Failure mode |
+|---|---|---|---|
+| `GET /api/health` | liveness (the pre-5.9 contract, unchanged — the frontend health client depends on it) | never | `{"status": "ok"}` while the process serves |
+| `GET /api/health/live` | liveness, explicit name | never | same |
+| `GET /api/health/ready` | readiness: can we serve correctly? | PostgreSQL + Redis (bounded timeouts: 3s / 2s) | `503` `{"status": "not_ready", "checks": {...}}` |
+
+- **Liveness never touches dependencies.** A liveness probe that fails
+  because Redis is down gets a healthy process killed by a restart loop.
+- **Readiness gates on database + Redis only.** The database check is
+  one `SELECT 1` on the *existing* engine (`app.db.session.get_engine`
+  — no second connection system); the Redis check is one `PING` on a
+  short-lived client created per check from the same `redis_url`
+  setting as Task 5.7 (no global client at import time). Both run under
+  hard timeouts, so a wedged dependency cannot hang readiness.
+- **The notification providers (Telegram/Bale) are NOT readiness
+  dependencies** — an external messenger outage must not make the API
+  unready.
+- Failure responses carry **only fixed words** (`ok` /
+  `unavailable` / `not_ready` / `no_recent_heartbeat`) — never URLs,
+  credentials, or exception text. Failures are logged (logger
+  `app.api.health`) with the exception **class name only**.
+
+### 10.2 Worker heartbeat (honesty about the worker)
+
+The `worker` field in `/api/health/ready` is **informational, never
+gating** (the worker is optional infrastructure — no business trigger
+depends on it yet). It distinguishes "Redis reachable" from "a worker
+process is actually alive" using **arq's own health-key mechanism**:
+the running worker refreshes `<queue>:health` in Redis every 30s with a
+31s TTL (`WorkerSettings.health_check_interval`), and readiness reports
+`ok` only when that key exists — a missing key is reported honestly as
+`no_recent_heartbeat`, never as a false "ok" merely because Redis
+answered.
+
+Documented limitations (no registry/lease/database involved — the
+heartbeat proves *a* worker is alive, not *which* one, how many, or
+that it is not stuck mid-job; a worker stalled between heartbeats still
+looks alive for up to ~31s).
+
+### 10.3 Metrics (`apps/api/app/core/metrics.py`)
+
+`prometheus-client` counters/histograms/gauges on the process-local
+default registry:
+
+| Metric | Labels | Where recorded |
+|---|---|---|
+| `http_requests_total` | method, route, status_class | request middleware |
+| `http_request_duration_seconds` (histogram) | method, route | request middleware |
+| `http_requests_in_progress` (gauge) | method | request middleware |
+| `worker_jobs_total` | function, outcome | worker job paths |
+| `notification_delivery_total` | channel, outcome | worker job paths |
+| `notification_delivery_duration_seconds` (histogram) | channel | worker job paths |
+
+- The **API process** exposes `GET /metrics` (Prometheus convention:
+  bare path at the server root). It is **unauthenticated by design** —
+  meant for infrastructure scraping on an internal network. Protect it
+  at the infrastructure level (bind to an internal interface /
+  reverse-proxy ACL).
+- The **worker process** serves no HTTP; `WORKER_METRICS_PORT`
+  (default `0` = disabled) makes its startup hook expose the same
+  registry on `GET :<port>/metrics` via the library's built-in server.
+- Timing uses the monotonic clock (`time.perf_counter`). No DB or
+  Redis call is made per request for metrics purposes.
+- **No** database-query metrics, **no** Redis command instrumentation,
+  **no** SQL tracing (§10.9).
+
+### 10.4 Cardinality rules — labels are bounded by construction
+
+Only these label dimensions exist, ever: `method`, `route` (the route
+**template**), `status_class` (`2xx`–`5xx`), `function` (arq job
+function name — one constant today), `outcome` (a fixed vocabulary:
+completed/retried/failed, success/rejected/retryable/failed),
+`channel` (validated against the known set; anything else collapses to
+the literal `unknown`).
+
+- `route` comes from `scope["route"]` (set by FastAPI routing) — the
+  template `/api/persons/{person_id}`, **never the raw path**;
+  unmatched requests collapse to the literal `unmatched`. Label
+  cardinality is bounded by the static route table.
+- **NEVER labels**: user IDs, person/event IDs, notification text,
+  recipient addresses, JWTs/tokens, query strings, or exception text.
+  Pinned by tests (`tests/test_observability.py`).
+- Health and metrics paths themselves are **not metered**
+  (`/metrics`, `/api/health`, `/api/health/live`, `/api/health/ready`)
+  — scraping and probing must not inflate the request counters.
+
+### 10.5 Error policy: observability must never take the app down
+
+Every metric helper (`observe_*` in `app/core/metrics.py`) swallows
+its own instrumentation errors (debug-level log with the exception,
+never a raise). A broken metric can cost a data point; it can never
+cost a request or a job.
+
+### 10.6 Local verification
+
+- Tests: `apps/api/tests/test_observability.py` (28 tests — liveness,
+  readiness gates, honest worker heartbeat, failure-response hygiene,
+  metric names, route-template labels, cardinality, secret-leakage
+  probes, worker/notification metric paths).
+- Runtime smoke against the real local PostgreSQL + Redis:
+  `apps/api/smoke_observability_59.py` (26 checks — includes readiness
+  with Redis deliberately down, worker metrics scrape, log-format
+  consistency with §9).
+
+### 10.7 Deployment notes
+
+- Scrape `/metrics` from your infrastructure (Prometheus server or any
+  compatible scraper) on an internal network; the endpoint is not
+  authenticated.
+- The worker's metrics exist **per worker process**; if you run several
+  workers, give each its own `WORKER_METRICS_PORT`.
+- The readiness gate is `database + redis`; wire your orchestrator's
+  readiness probe to `/api/health/ready` and liveness probe to
+  `/api/health/live` (or the legacy `/api/health`).
+
+### 10.8 Configuration
+
+One setting (`apps/api/.env.example`): `WORKER_METRICS_PORT` (0–65535,
+default 0). No feature flags for health/metrics — they are always on.
+
+### 10.9 Explicitly out of scope (Task 5.9)
+
+OpenTelemetry, Sentry, a Prometheus **server**, Grafana, Loki, Tempo,
+alerting, distributed tracing, an audit database, notification delivery
+history, DB-query/Redis-command metrics, and any frontend observability
+UI. What exists is the exposition foundation those would build on.
