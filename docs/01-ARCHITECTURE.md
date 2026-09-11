@@ -461,3 +461,92 @@ Redis or a real provider.
 
 These belong to later documents, after the domain TBDs in
 [00-PROJECT-CONTEXT.md](00-PROJECT-CONTEXT.md) §7 are resolved.
+
+---
+
+## 9. Logging (implemented — Task 5.8)
+
+Task 5.8 established the backend's logging foundation: **stdlib `logging`
+only** — no logging framework, no JSON dependency, no observability stack
+(metrics/tracing/Sentry/ELK are explicitly out of scope).
+
+### 9.1 Central configuration — `apps/api/app/core/logging.py`
+
+The ONE place logging is configured. Every other module only calls
+`logging.getLogger(...)` (convention: `app.*` namespaces via
+`get_logger`); `basicConfig`/`addHandler`/`dictConfig` appear nowhere
+else (pinned by a structural test).
+
+- **Idempotent**: one `StreamHandler` on the root logger, marked so a
+  second `configure_logging()` call never duplicates handlers (it may
+  adjust the level — tests do).
+- **One format**, identical everywhere:
+  `<ISO-8601 UTC timestamp> <LEVEL> <logger name> pid=<pid> <message>`.
+  The timestamp is explicit UTC with milliseconds and offset — machine-
+  parsable, non-locale-dependent. `pid` distinguishes the API process
+  from the background worker process in interleaved output.
+- **`LOG_LEVEL`** (`Settings.log_level`, `.env.example`): standard levels
+  only, case-insensitive; anything else is a clean startup
+  `ValidationError` — never a silent fallback to a different level.
+- **Call sites**: `app/main.py` (at import — after uvicorn's own config,
+  so our handler wins) and `app/worker/__main__.py` (only the `arq` CLI
+  configures logging itself; `python -m app.worker` would otherwise run
+  on stdlib defaults).
+
+### 9.2 Who logs what — no duplicates
+
+| Concern | Logger | Notes |
+|---|---|---|
+| HTTP requests | `app.api.request` | one line per request: method, path, status, duration_ms, request_id. uvicorn's access log is silenced by the central config so requests are logged exactly once. |
+| Unhandled 5xx | `uvicorn.error` | Starlette's `ServerErrorMiddleware` re-raises; the server logs the single stack trace. We deliberately register NO app-level exception handler for 500s — that would log the traceback twice. The `{"detail": ...}` API error contract is unchanged. |
+| Auth/authz failures | `app.api.security` | WARNING on every authentication failure (reason + request_id, username on login failures, user_id on permission denials) and INFO on successful logins. |
+| Notification queue | `arq.worker` | arq's own lifecycle lines propagate to the root handler unchanged. |
+| Notification delivery | `app.worker.delivery` / `app.worker.service` | see §9.4 |
+| Everything else | `app.*` per module | via `get_logger` |
+
+Expected domain outcomes (401/403/422, rejected notifications) log at
+INFO/WARNING — never ERROR. ERROR is reserved for genuine failures:
+exhausted retries, Redis outages, corrupt job payloads.
+
+### 9.3 Request correlation id
+
+`RequestLoggingMiddleware` (pure ASGI, `app/api/middleware.py`) accepts
+an incoming `X-Request-ID` **only** if ≤64 chars and matching
+`[A-Za-z0-9_.-]` — a hostile oversized/header-injecting value is replaced
+by a fresh `uuid4` hex. The id is exposed on `request.state.request_id`
+(for the security log lines), printed on the request line, and echoed
+back in the `X-Request-ID` response header so clients can quote it.
+
+### 9.4 What is never logged
+
+Locked by tests (`tests/test_logging_*.py`) and by construction:
+
+- **Credentials & secrets**: passwords (attempted or real), password
+  hashes, JWT/Bearer token values, the Authorization header, bot tokens,
+  Redis/DB URLs with embedded credentials, cookies, API keys.
+- **Notification content** (by default): message text, recipient
+  addresses, raw provider HTTP responses, provider URLs with tokens.
+  Worker lines carry channel, category, `job_id`, attempt counts,
+  external message id, duration — enough to diagnose, nothing personal.
+- **Request bodies, headers, or query strings** — the request line is
+  method, path, status, duration, request_id, nothing else.
+
+The `Authorization`-failure log lines record the *reason* and a minimal
+user reference (username on login, `user_id` on token/permission
+failures) — the API responses stay generic; the log is the only place
+the reason is recorded.
+
+### 9.5 `print()` policy
+
+`print()` remains ONLY in the three interactive CLI scripts whose
+console output IS their user interface: `app/assign_role.py`,
+`app/create_user.py`, `app/db/check.py`. There are no `print()` calls on
+any production path (API, worker, services) — pinned by a structural
+test.
+
+### 9.6 Explicitly out of scope (Task 5.8)
+
+Metrics, tracing, OpenTelemetry, Sentry, Prometheus, ELK/Loki/Grafana,
+dashboards, alerting, an audit database, and any frontend logging UI.
+Task 5.8 is logging only; structured logging/observability decisions are
+deferred (T13+ TBDs stay open).

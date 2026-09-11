@@ -5,9 +5,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
 from app.api.event_assignments import router as event_assignments_router
 from app.api.events import router as events_router
+from app.api.middleware import RequestLoggingMiddleware
 from app.api.persons import router as persons_router
 from app.api.roles import router as roles_router
 from app.core.config import get_settings
+from app.core.logging import configure_logging
+
+# Configure application logging once per process, before anything logs
+# (Task 5.8). Under uvicorn this runs at app-import time — AFTER uvicorn's
+# own dictConfig — so our root handler/format wins. No app-level Exception
+# handler is registered on purpose: Starlette's ServerErrorMiddleware
+# re-raises unhandled exceptions and the server logs the single stack
+# trace; the API error contract ({"detail": ...}) stays exactly as-is.
+_settings = get_settings()
+configure_logging(level=_settings.log_level)
 
 app = FastAPI(title="Ketabdaneh API")
 
@@ -15,7 +26,6 @@ app = FastAPI(title="Ketabdaneh API")
 # Phase 5.3) are cross-origin in development (frontend :3000, API :8000).
 # Allowed origins come from settings (CORS_ALLOW_ORIGINS) — never a
 # wildcard with credentials.
-_settings = get_settings()
 if _settings.cors_origins_list:
     app.add_middleware(
         CORSMiddleware,
@@ -24,6 +34,11 @@ if _settings.cors_origins_list:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "Accept"],
     )
+
+# One request log line per HTTP call: method, path, status, duration,
+# request id (Task 5.8; uvicorn's own access log is disabled by
+# app.core.logging so requests are logged exactly once).
+app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(auth_router)
 app.include_router(roles_router)

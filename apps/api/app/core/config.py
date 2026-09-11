@@ -7,7 +7,7 @@ are hard-coded; `apps/api/.env.example` documents the expected variables.
 
 from functools import lru_cache
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -63,6 +63,24 @@ class Settings(BaseSettings):
     # Allow the obviously-unsafe placeholder secret. Default True for the
     # development workflow; production sets this to 0/false.
     auth_allow_insecure_dev_secret: bool = True
+
+    # --- Logging (Task 5.8; docs/01 §9) -----------------------------------
+    # Root log level for the API and the background worker. Standard
+    # Python levels only, case-insensitive; anything else is a
+    # configuration error (never a silent fallback to a different level).
+    log_level: str = "INFO"
+
+    @field_validator("log_level")
+    @classmethod
+    def _log_level_is_standard(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        valid = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+        if normalized not in valid:
+            raise ValueError(
+                f"log_level must be one of {', '.join(valid)} "
+                f"(case-insensitive), got {value!r}"
+            )
+        return normalized
 
     # --- Notifications (Phase 5.6; docs/01 §6, .env.example) --------------
     # Provider bot tokens come from the environment and are NEVER committed.
