@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
 from app.api.event_assignments import router as event_assignments_router
 from app.api.events import router as events_router
+from app.api.health import metrics_router, router as health_router
 from app.api.middleware import RequestLoggingMiddleware
 from app.api.persons import router as persons_router
 from app.api.roles import router as roles_router
@@ -46,7 +47,8 @@ app.include_router(persons_router)
 app.include_router(events_router)
 app.include_router(event_assignments_router)
 
-
-@app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+# Health (liveness / readiness — Task 5.9) and the Prometheus metrics
+# endpoint. Both public by design: health checks and infrastructure
+# scraping must work independently of auth (docs/06 §4, docs/01 §10).
+app.include_router(health_router)
+app.include_router(metrics_router)

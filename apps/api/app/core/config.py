@@ -107,6 +107,12 @@ class Settings(BaseSettings):
     notification_retry_base_delay_seconds: float = Field(default=5.0, gt=0)
     notification_retry_max_delay_seconds: float = Field(default=300.0, gt=0)
 
+    # --- Observability (Task 5.9; docs/01 §10) ----------------------------
+    # The API process always exposes GET /metrics (no flag gymnastics —
+    # protect at infrastructure level). The worker process serves no
+    # HTTP, so its Prometheus metrics need an explicit port; 0 disables.
+    worker_metrics_port: int = Field(default=0, ge=0, le=65535)
+
     @model_validator(mode="after")
     def _retry_delays_make_sense(self) -> "Settings":
         # A max delay below the base delay would make the backoff cap
