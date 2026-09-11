@@ -31,6 +31,26 @@ services:
   postgres:
     image: postgres:18
     restart: unless-stopped
+    # Container hardening (Task 5.13; validated by the local deployment
+    # simulation — docs/12 §16): read-only root filesystem (data lives in
+    # the named volume; the unix-socket dir and /tmp are tmpfs), all Linux
+    # capabilities dropped except the five the official image's
+    # entrypoint/initdb needs (user/group switching and file ownership),
+    # and no setuid-style privilege escalation.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql:uid=999,gid=999,mode=0775
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.prod}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
@@ -53,6 +73,18 @@ services:
     # Ephemeral by design for this baseline (job queue, TTL'd health key);
     # a durable Redis (AOF/RDB) belongs to a later persistence task.
     command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # Container hardening (Task 5.13): run as the image's own unprivileged
+    # redis user (999) instead of root+gosu, read-only root filesystem
+    # (nothing is persisted by design), zero Linux capabilities, no
+    # privilege escalation.
+    user: "999:999"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     # NOT published to the host: only api/worker reach it over the
     # internal network. (docker-compose.yml exposes 6390 for development.)
     healthcheck:
@@ -69,6 +101,18 @@ services:
     image: ketabdaneh-api
     restart: unless-stopped
     init: true
+    # Container hardening (Task 5.13): the image already runs as the
+    # non-root `app` user (Dockerfile); additionally a read-only root
+    # filesystem (the API writes nothing to disk — bytecode writes are
+    # disabled by PYTHONDONTWRITEBYTECODE), all Linux capabilities
+    # dropped (a Python web server needs none), no privilege escalation.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       APP_ENV: production
       API_HOST: 0.0.0.0
@@ -117,6 +161,16 @@ services:
     restart: unless-stopped
     init: true
     command: ["python", "-m", "app.worker"]
+    # Container hardening (Task 5.13): same policy as the API service —
+    # non-root image user, read-only root filesystem (arq/redis-py write
+    # nothing to disk), zero capabilities, no privilege escalation.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       APP_ENV: production
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?set AUTH_SECRET_KEY in .env.prod (>= 32 chars, real value in real deployments)}
@@ -159,6 +213,20 @@ services:
     image: ketabdaneh-web
     restart: unless-stopped
     init: true
+    # Container hardening (Task 5.13): the image already runs as the
+    # non-root `nextjs` user (Dockerfile); additionally a read-only root
+    # filesystem with tmpfs scratch space — /app/.next/cache is tmpfs
+    # because Next.js writes its runtime data cache there (blocking it
+    # does break the standalone server), and /tmp for anything else.
+    # Zero capabilities, no privilege escalation.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       api:
         condition: service_healthy
@@ -186,6 +254,22 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    # Container hardening (Task 5.13): read-only root filesystem (all
+    # writable state lives in the caddy_data/caddy_config volumes), all
+    # capabilities dropped except NET_BIND_SERVICE — the caddy image runs
+    # as root and binds 80/443, which is not permitted without it. No
+    # privilege escalation. (A fully non-root caddy would additionally
+    # need volume ownership handling; documented in docs/13 §container
+    # hardening.)
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
     environment:
       WEB_DOMAIN: ${WEB_DOMAIN:?set WEB_DOMAIN in .env.prod (the public domain the stack is served under)}
       ACME_EMAIL: ${ACME_EMAIL:-}

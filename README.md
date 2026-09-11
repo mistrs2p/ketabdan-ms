@@ -150,6 +150,19 @@ server layout, TLS, firewall, backup/restore/rollback, verification,
 and troubleshooting, and [docs/01-ARCHITECTURE.md](docs/01-ARCHITECTURE.md)
 §12 for the container-level facts (images, healthchecks, ports).
 
+## Continuous Integration
+
+Every push to `main` and every pull request runs the CI workflow
+(`.github/workflows/ci.yml`): four parallel jobs — backend (compileall,
+pip check, full pytest), frontend (ESLint, Vitest, production build),
+docker (compose validation, image builds, worker runtime, Caddyfile
+syntax), and security (gitleaks secret scan over the full git history,
+pip-audit, npm audit, bandit). CI needs no secrets and runs read-only,
+so fork pull requests run the same pipeline safely. Security policy and
+vulnerability reporting: [SECURITY.md](SECURITY.md). How CI works, its
+failure policy, documented dependency exceptions, and the local
+equivalent of every check: [docs/13-CI.md](docs/13-CI.md).
+
 ## Current Project Status
 
 **Phase 4 (Frontend) complete; Phase 5 (Auth) underway.** The repository
@@ -373,6 +386,25 @@ rehearsed restore procedure. No real-server deployment was performed —
 the deployment was verified as a full local simulation with fake
 credentials and Caddy's internal CA (docs/12 §16 states this
 distinction explicitly).
+
+Task 5.13 added the **CI and security hardening layer**
+(docs/13-CI.md, SECURITY.md): the four-job CI workflow described above
+(SHA-pinned actions, `contents: read` only, zero secrets — fork-safe by
+construction), a blocking gitleaks secret scan over the full git
+history (the repository is clean; no allowlist exists), pip-audit and
+a calibrated npm-audit gate with the one documented dependency
+exception (postcss-via-next, docs/13 §6), bandit at the calibrated
+medium+ level, and compose-level security regression tests
+(`apps/api/tests/test_compose_security.py`) that pin the deployment
+posture: only Caddy publishes 80/443, no privileged containers or
+Docker-socket mounts, non-root images, read-only root filesystems, and
+capability sets pinned to the documented minimum. All six production
+containers were hardened (read_only + tmpfs, cap_drop ALL, no-new-
+privileges) and validated by re-running the full local deployment
+simulation: 18/18 verification checks through the public edge,
+including login, plus a stack-recreation persistence check and direct
+runtime probes. CI has not yet run on the remote platform; every check
+was rehearsed locally (docs/13 §12 has the local equivalents).
 
 On top of that API, the Phase 4 frontend (tasks 4.1–4.9) is complete:
 bilingual (fa/en) locale routing with full RTL/LTR support, light/dark

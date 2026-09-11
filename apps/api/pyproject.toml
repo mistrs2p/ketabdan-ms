@@ -24,9 +24,26 @@ dependencies = [
     "prometheus-client>=0.26",
 ]
 
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# Explicit instead of setuptools auto-discovery: this directory also
+# contains alembic/ (migrations) and tests/, and a plain `pip install
+# .` from the full tree — what CI does — fails auto-discovery with
+# "multiple top-level packages". The package is `app` (the Dockerfile
+# installs with only app/ in context, so it never hit this).
+include = ["app*"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     # In-memory Redis for the offline worker/queue tests (Task 5.7).
     "fakeredis>=2.30",
+    # Parsing the compose files in the repository-level security
+    # regression tests (Task 5.13: tests/test_compose_security.py).
+    # Dev/test only — never installed into the production image
+    # (apps/api/Dockerfile installs [project] dependencies only).
+    "pyyaml>=6.0",
 ]
