@@ -1,0 +1,26 @@
+# Keep the web build context (apps/web/) minimal. CRITICAL: .env* files
+# are excluded so local configuration (and anything sensitive added to
+# .env.local later) is never copied into — or inlined into the build of —
+# an image layer. NEXT_PUBLIC_API_BASE_URL is passed explicitly as a
+# build arg by docker-compose.prod.yml.
+
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+# Tests and dev tooling are not needed to build or serve.
+tests/
+vitest.config.ts
+eslint.config.mjs
+
+# Editor/OS noise.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

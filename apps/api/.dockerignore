@@ -1,0 +1,30 @@
+# Keep the API build context (apps/api/) minimal — nothing here affects
+# local development; it only controls what `docker build` sends and what
+# ends up in the image.
+
+# Local virtualenv (the image installs its own into /opt/venv).
+.venv/
+
+# Python caches / artifacts.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Environment files — never bake credentials into image layers (Task 5.10).
+.env
+.env.*
+
+# Tests and smoke scripts: development-only, not needed to run the API,
+# the worker, or migrations.
+tests/
+smoke_*.py
+
+# Editor/OS noise.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

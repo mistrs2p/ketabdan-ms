@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.prod.example
 apps/*/.env
 apps/*/.env.*
 !apps/*/.env.example

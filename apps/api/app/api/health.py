@@ -31,6 +31,7 @@ with the exception CLASS NAME only.
 import asyncio
 
 import redis.asyncio as aioredis
+from arq.constants import health_check_key_suffix
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, Response
 
@@ -50,9 +51,13 @@ _health_log = get_logger("app.api.health")
 DATABASE_CHECK_TIMEOUT_SECONDS = 3.0
 REDIS_CHECK_TIMEOUT_SECONDS = 2.0
 
-# arq's worker health key: the running worker refreshes it every
-# health_check_interval seconds with a TTL of interval + 1s.
-WORKER_HEALTH_KEY = f"{NOTIFICATION_QUEUE_NAME}:health"
+# arq's worker health key, composed EXACTLY as arq's Worker does
+# (queue_name + arq's own suffix constant — Task 5.11 fix: this was
+# previously hand-written as "<queue>:health", which arq never writes;
+# with a genuinely running worker the heartbeat was never found). The
+# running worker refreshes the key every health_check_interval seconds
+# with a TTL of interval + 1s.
+WORKER_HEALTH_KEY = NOTIFICATION_QUEUE_NAME + health_check_key_suffix
 
 _CHECK_OK = "ok"
 _CHECK_UNAVAILABLE = "unavailable"
@@ -115,9 +120,9 @@ async def _check_redis() -> str:
 async def _check_worker_heartbeat() -> str:
     """Informational: is a worker process alive (not just Redis up)?
 
-    arq's Worker writes ``<queue>:health`` every 30s with a 31s TTL, so
-    the key's presence proves a live worker process. Read through the
-    same short-lived client pattern as the Redis check.
+    arq's Worker writes ``<queue>:health-check`` every 30s with a 31s
+    TTL, so the key's presence proves a live worker process. Read through
+    the same short-lived client pattern as the Redis check.
     """
     settings = get_settings()
     try:

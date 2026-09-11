@@ -826,3 +826,123 @@ secret rotation; CI secrets; an auth redesign or JWT migration; audit
 logging; observability changes; disabling OpenAPI in production (the
 schema is public API documentation — protecting it is an
 infrastructure-level decision, out of scope here).
+
+## 12. Production Container Baseline (implemented — Task 5.11)
+
+A production-oriented container/runtime baseline on top of the existing
+application — containerization only, deliberately not a deployment
+story (no cloud, no TLS, no reverse proxy, no CI/CD, no Kubernetes;
+all later tasks).
+
+### 12.1 Development vs production containers
+
+Two compose files, one concern each:
+
+- `docker-compose.yml` — **development**: PostgreSQL (host port 5433)
+  and Redis (host port 6390) only; the API, worker, and web run as
+  local dev servers against them. Unchanged by this task (header
+  comment added).
+- `docker-compose.prod.yml` — **production topology**: the full
+  application containerized. PostgreSQL and Redis are **not** published
+  to the host; only the API (`8000`) and web (`3000`) are, because the
+  browser calls the API directly (§4) and no reverse proxy exists yet
+  (a later task fronts both).
+
+Developers never build production images for ordinary code changes —
+`next dev` / `uvicorn --reload` / `python -m app.worker` against the
+development compose remain the workflow.
+
+### 12.2 Images
+
+| Image | Dockerfile | Shape |
+|---|---|---|
+| `ketabdaneh-api` | `apps/api/Dockerfile` | multi-stage `python:3.12-slim`: deps installed into `/opt/venv` in the build stage; runtime stage has venv + app + alembic, **non-root user**, no toolchain/tests/dev-deps |
+| `ketabdaneh-web` | `apps/web/Dockerfile` | multi-stage `node:22-alpine` on Next.js **standalone** output (`next.config.ts`): `npm ci` → `next build` → runtime image with server.js, static assets, and i18n message catalogs only, **non-root user** |
+
+The **worker uses the same `ketabdaneh-api` image** with a different
+command (`python -m app.worker`): it is the same Python application
+with the identical dependency set — one image, two commands, no
+artificial abstraction. `NEXT_PUBLIC_API_BASE_URL` is the only build
+argument anywhere; it is public browser-side configuration (§4), never
+a secret.
+
+### 12.3 Topology, networking, runtime policy
+
+```text
+web ──> api ──> postgres
+            └──> redis ──> worker
+```
+
+One explicit internal network; every service-to-service address is a
+service name (`postgres`, `redis`) on it, with container-internal ports
+(5432/6379 — the 5433/6390 host ports are the development compose's
+convenience). `depends_on` with `condition: service_healthy` orders
+startup but is not a substitute for application behavior — the API
+stays resilient to dependency races (bounded retries, honest readiness)
+and the worker restarts independently (`restart: unless-stopped`
+everywhere, `init: true` for signal/zombie hygiene).
+
+Two bug fixes this task surfaced (both latent until the first real
+containerized run, both now regression-tested):
+
+- `WorkerSettings` never declared `redis_settings`, so arq silently
+  used its own `localhost:6379` default — the worker ignored
+  `REDIS_URL` entirely. It now derives the connection from the same
+  setting as the enqueue side.
+- The readiness worker-heartbeat check looked for `<queue>:health`,
+  but arq writes `<queue>:health-check` — a live worker was always
+  reported as `no_recent_heartbeat`. The key is now composed from
+  arq's own suffix constant.
+
+### 12.4 Migrations — explicit, never automatic
+
+Nothing runs Alembic on container startup (an API restart must never
+arbitrarily rewrite schema). Migrations are an explicit command against
+the same image and environment:
+
+```text
+docker compose --env-file .env.prod -f docker-compose.prod.yml \
+  run --rm api alembic upgrade head
+```
+
+### 12.5 Healthchecks (consistent with §10)
+
+| Service | Check | Notes |
+|---|---|---|
+| api | `GET /api/health/live` (python urllib) | **liveness**, not readiness — an unhealthy dependency must not get the API container restarted |
+| worker | `worker_healthcheck.py` — arq's `<queue>:health-check` key in Redis | no fake HTTP: the worker serves none; this is §10.2's own mechanism |
+| postgres | `pg_isready` | native |
+| redis | `redis-cli ping` | native |
+| web | `node -e fetch(...)` | Node's own fetch; any served response (incl. the locale redirect) proves the server is up |
+
+### 12.6 Environment / secrets
+
+All runtime values come from an env file supplied with `--env-file`
+(`.env.prod.example` is the committed template — fake local values
+only; `.env.prod` is git-ignored). No secret appears in any Dockerfile,
+compose file, or build argument. Inside the stack, `DATABASE_URL` /
+`REDIS_URL` are assembled from the same variables the containers
+receive — Task 5.10's `APP_ENV=production` fail-closed validation runs
+unmodified inside the containers.
+
+### 12.7 Running the production-like stack locally
+
+```text
+cp .env.prod.example .env.prod          # all fake values; adjust ports if needed
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api alembic upgrade head
+```
+
+Verify: `docker compose --env-file .env.prod -f docker-compose.prod.yml ps`
+(all healthy), `GET http://localhost:8000/api/health/ready` (ok, with
+`worker: ok` once the first heartbeat lands ~30s in), and
+`http://localhost:3000` (web). No Telegram/Bale contact happens with
+empty tokens (§6).
+
+### 12.8 Explicitly out of scope (Task 5.11)
+
+Cloud/server deployment, CI/CD, GitHub Actions, TLS certificates,
+reverse proxy, domain/DNS, Kubernetes, secret managers, monitoring
+platform deployment, resource limits (no evidence in the project to
+choose honest CPU/memory values — added when there is), durable Redis
+persistence, and any business-domain change.
