@@ -99,7 +99,13 @@ class Settings(BaseSettings):
     # Non-secret runtime configuration.
     database_url: SecretStr | None = None
 
-    api_host: str = "0.0.0.0"
+    # Binding all interfaces is REQUIRED in the container runtime (the
+    # API is reached through the Docker network, never exposed directly —
+    # docs/01 §12): a loopback bind would make it unreachable from the
+    # proxy/other containers. Exposure is controlled by Docker networking
+    # (only Caddy publishes host ports, docs/12 §3), not by this bind.
+    # (nosec marker: B104 is a false positive here, per the rationale above)
+    api_host: str = "0.0.0.0"  # nosec B104
     api_port: int = 8000
 
     # --- Cross-origin browser access (Phase 5.3) ---------------------------

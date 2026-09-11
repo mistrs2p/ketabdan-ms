@@ -5,6 +5,9 @@ Git in this repository. They apply to every task, without exception.
 
 **Project context:** [docs/00-PROJECT-CONTEXT.md](docs/00-PROJECT-CONTEXT.md)
 **Full workflow document:** [docs/11-GIT-WORKFLOW.md](docs/11-GIT-WORKFLOW.md)
+**CI and its checks:** [docs/13-CI.md](docs/13-CI.md) — every pull
+request runs the four-job CI workflow (tests, lint/build, docker,
+security); all jobs are expected green before merge.
 
 ---
 
