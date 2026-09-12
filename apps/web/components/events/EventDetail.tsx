@@ -1,4 +1,6 @@
-import { getTranslations, getLocale } from "next-intl/server";
+"use client";
+
+import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import type {
   EventAssignmentRead,
@@ -16,11 +18,11 @@ import { EventAssignments } from "./EventAssignments";
 //
 // `people` feeds the assignment form's person selector;
 // `initialAssignments` seeds the list so the first render is complete
-// without client fetching. Either being undefined means its server
-// fetch failed — the section degrades to a localized error state
-// while the event information stays readable. The raw event id is not
-// shown — it is in the URL, and exposing it visually adds nothing.
-export async function EventDetail({
+// without an extra fetch. Either being undefined means its fetch
+// failed — the section degrades to a localized error state while the
+// event information stays readable. The raw event id is not shown —
+// it is in the URL, and exposing it visually adds nothing.
+export function EventDetail({
   event,
   initialAssignments,
   people,
@@ -29,11 +31,11 @@ export async function EventDetail({
   initialAssignments: EventAssignmentRead[] | undefined;
   people: PersonRead[] | undefined;
 }) {
-  const t = await getTranslations("events.detail");
-  const tStatus = await getTranslations("events.status");
-  const tEvents = await getTranslations("app.pages.events");
-  const tError = await getTranslations("events.assignments");
-  const locale = await getLocale();
+  const t = useTranslations("events.detail");
+  const tStatus = useTranslations("events.status");
+  const tEvents = useTranslations("app.pages.events");
+  const tError = useTranslations("events.assignments");
+  const locale = useLocale();
 
   const statusLabels: Record<string, string> = {
     DRAFT: tStatus("DRAFT"),
@@ -100,7 +102,7 @@ export async function EventDetail({
       <div>
         <Link
           href="/events"
-          className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-primary/5"
+          className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-primary/5"
         >
           {t("back", { page: tEvents("title") })}
         </Link>
@@ -109,8 +111,8 @@ export async function EventDetail({
   );
 }
 
-// Section-level load failure (assignments or people fetch failed on
-// the server). The rest of the event detail stays readable.
+// Section-level load failure (assignments or people fetch failed).
+// The rest of the event detail stays readable.
 function SectionError({ title, body }: { title: string; body: string }) {
   return (
     <div
@@ -124,9 +126,9 @@ function SectionError({ title, body }: { title: string; body: string }) {
 }
 
 // Single-event fetch failure (GET /api/events/{id} failed on network
-// or server). Not-found is handled separately by the page.
-export async function EventDataError() {
-  const t = await getTranslations("events.detail.error");
+// or server). Not-found is handled separately by the loader.
+export function EventDataError() {
+  const t = useTranslations("events.detail.error");
 
   return (
     <div

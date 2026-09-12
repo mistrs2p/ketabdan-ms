@@ -1,32 +1,30 @@
-import { getTranslations } from "next-intl/server";
-import { getLocale } from "next-intl/server";
-import { getEvents, ApiError, type EventRead } from "@/lib/api";
+"use client";
+
+import { useLocale, useTranslations } from "next-intl";
+import { getEvents, type EventRead } from "@/lib/api";
+import { useApiData } from "@/hooks/useApiData";
 import { Link } from "@/i18n/routing";
 import { eventStatusLabel, formatEventDateTime } from "./eventStatus";
 import { EventsErrorState } from "./EventsErrorState";
 import { EventsEmptyState } from "./EventsEmptyState";
+import { EventsLoading } from "./EventsLoading";
 
-// The Events list screen. A Server Component following the People list
-// pattern (Task 4.2): it calls the typed API layer (getEvents)
-// directly. Backend ordering (planned_at, then id) is preserved; the
-// UI never re-sorts. planned_at is formatted for presentation only —
-// the instant and offset are never changed.
-export async function EventsPage() {
-  const t = await getTranslations("events");
-  const tTitle = await getTranslations("app.pages.events");
-  const locale = await getLocale();
-
-  let events: EventRead[] = [];
-  let error: ApiError | undefined;
-  try {
-    events = await getEvents();
-  } catch (e) {
-    if (e instanceof ApiError) {
-      error = e;
-    } else {
-      error = new ApiError("server", String(e));
-    }
-  }
+// The Events list screen, following the People list pattern. A Client
+// Component: the access token lives in browser localStorage, which a
+// server component cannot read — a server-side fetch would go out
+// unauthenticated and fail 401. The list is therefore fetched on
+// mount, after the AuthGate has confirmed the session (see
+// hooks/useApiData).
+//
+// The typed API layer (getEvents) is called directly. Backend
+// ordering (planned_at, then id) is preserved; the UI never re-sorts.
+// planned_at is formatted for presentation only — the instant and
+// offset are never changed.
+export function EventsPage() {
+  const t = useTranslations("events");
+  const tTitle = useTranslations("app.pages.events");
+  const locale = useLocale();
+  const state = useApiData(getEvents);
 
   const statusLabels: Record<string, string> = {
     DRAFT: t("status.DRAFT"),
@@ -51,11 +49,14 @@ export async function EventsPage() {
         </Link>
       </header>
 
-      {error ? <EventsErrorState error={error} /> : null}
-      {!error && events.length === 0 ? <EventsEmptyState /> : null}
-      {!error && events.length > 0 ? (
+      {state.status === "loading" ? <EventsLoading /> : null}
+      {state.status === "error" ? <EventsErrorState error={state.error} /> : null}
+      {state.status === "success" && state.data.length === 0 ? (
+        <EventsEmptyState />
+      ) : null}
+      {state.status === "success" && state.data.length > 0 ? (
         <EventsTable
-          events={events}
+          events={state.data}
           locale={locale}
           statusLabels={statusLabels}
         />
@@ -68,7 +69,7 @@ export async function EventsPage() {
 // data as stacked cards. Status is text (not color-only). The View
 // action links to the event detail page via the localized routing
 // helper.
-async function EventsTable({
+function EventsTable({
   events,
   locale,
   statusLabels,
@@ -77,7 +78,7 @@ async function EventsTable({
   locale: string;
   statusLabels: Record<string, string>;
 }) {
-  const t = await getTranslations("events");
+  const t = useTranslations("events");
 
   return (
     <>

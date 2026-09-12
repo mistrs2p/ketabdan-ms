@@ -1,13 +1,15 @@
-import { getTranslations } from "next-intl/server";
+"use client";
+
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 
 // Not-found state for a valid event id with no matching event (GET
 // /api/events/{event_id} → 404). The raw id is deliberately not shown
 // as the primary message — a plain localized "event not found" with a
 // way back to the Events list.
-export async function EventNotFound() {
-  const t = await getTranslations("events.detail.notFound");
-  const tEvents = await getTranslations("app.pages.events");
+export function EventNotFound() {
+  const t = useTranslations("events.detail.notFound");
+  const tEvents = useTranslations("app.pages.events");
 
   return (
     <div

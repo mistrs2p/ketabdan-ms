@@ -76,8 +76,9 @@ export function EventCreateForm() {
     setFormError(undefined);
     try {
       await createEvent(payload);
-      // The list is force-dynamic — a fresh navigation refetches it,
-      // so the new event is visible without any cache layer.
+      // The list fetches client-side on mount — a fresh navigation
+      // refetches it, so the new event is visible without any cache
+      // layer.
       router.push("/events");
     } catch (e) {
       const error =

@@ -1,35 +1,29 @@
-import { getTranslations } from "next-intl/server";
+"use client";
+
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { getPersons, ApiError, type PersonRead } from "@/lib/api";
+import { getPersons } from "@/lib/api";
+import { useApiData } from "@/hooks/useApiData";
 import { PeopleTable } from "./PeopleTable";
 import { PeopleEmptyState } from "./PeopleEmptyState";
 import { PeopleErrorState } from "./PeopleErrorState";
+import { PeopleLoading } from "./PeopleLoading";
 
-// The People list screen. A Server Component: it calls the typed API
-// layer (getPersons) directly — no fetch boilerplate, no client data
-// framework. Backend ordering (name, then id) is preserved; the UI
-// never re-sorts.
+// The People list screen. A Client Component: the access token lives
+// in browser localStorage, which a server component cannot read — a
+// server-side fetch would go out unauthenticated and fail 401. The
+// list is therefore fetched on mount, after the AuthGate has
+// confirmed the session (see hooks/useApiData).
 //
-// States: loading via the sibling loading.tsx (streaming), error /
-// empty / data handled here. The "Add person" button navigates to the
-// Create Person flow (/people/new) via the localized routing helpers.
-export async function PeoplePage() {
-  const t = await getTranslations("people");
-  const tTitle = await getTranslations("app.pages.people");
-
-  let people: PersonRead[] = [];
-  let error: ApiError | undefined;
-  try {
-    people = await getPersons();
-  } catch (e) {
-    if (e instanceof ApiError) {
-      error = e;
-    } else {
-      // Unexpected client-layer error — present as a generic server
-      // failure rather than crashing the page.
-      error = new ApiError("server", String(e));
-    }
-  }
+// The typed API layer (getPersons) is called directly — no client
+// data framework. Backend ordering (name, then id) is preserved; the
+// UI never re-sorts. States: loading / error / empty / data handled
+// here. The "Add person" button navigates to the Create Person flow
+// (/people/new) via the localized routing helpers.
+export function PeoplePage() {
+  const t = useTranslations("people");
+  const tTitle = useTranslations("app.pages.people");
+  const state = useApiData(getPersons);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -46,9 +40,14 @@ export async function PeoplePage() {
         </Link>
       </header>
 
-      {error ? <PeopleErrorState error={error} /> : null}
-      {!error && people.length === 0 ? <PeopleEmptyState /> : null}
-      {!error && people.length > 0 ? <PeopleTable people={people} /> : null}
+      {state.status === "loading" ? <PeopleLoading /> : null}
+      {state.status === "error" ? <PeopleErrorState error={state.error} /> : null}
+      {state.status === "success" && state.data.length === 0 ? (
+        <PeopleEmptyState />
+      ) : null}
+      {state.status === "success" && state.data.length > 0 ? (
+        <PeopleTable people={state.data} />
+      ) : null}
     </div>
   );
 }

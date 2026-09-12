@@ -12,14 +12,16 @@ import {
 } from "@/lib/api";
 
 // The Create Person form. A Client Component because it owns interactive
-// state and submission. Role options arrive from the server page (GET
-// /api/roles fetched once there) — they are never hard-coded. Roles are
-// selected by checkbox chips (zero/one/many; duplicates impossible via
-// the checkbox model) and sent to the backend as machine `code`s.
+// state and submission. Role options arrive from the loader (GET
+// /api/roles fetched once, client-side) — they are never hard-coded.
+// Roles are selected by checkbox chips (zero/one/many; duplicates
+// impossible via the checkbox model) and sent to the backend as
+// machine `code`s.
 //
-// Success navigates back to the People list; the list page is
-// force-dynamic, so the newly created person is fetched fresh on render.
-// No client cache library, no local fabrication of success.
+// Success navigates back to the People list, which fetches its data
+// client-side on mount — the newly created person appears with the
+// fresh fetch. No client cache library, no local fabrication of
+// success.
 export function PersonCreateForm({
   roles,
   rolesError,
@@ -74,8 +76,9 @@ export function PersonCreateForm({
     setFormError(undefined);
     try {
       await createPerson(payload);
-      // The list is force-dynamic — a fresh navigation refetches it,
-      // so the new person is visible without any cache layer.
+      // The list fetches client-side on mount — a fresh navigation
+      // refetches it, so the new person is visible without any cache
+      // layer.
       router.push("/people");
     } catch (e) {
       const error =

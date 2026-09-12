@@ -1,10 +1,12 @@
-import { getLocale, getTranslations, setRequestLocale } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Metadata } from "next";
 import { DashboardPage } from "@/components/dashboard/DashboardPage";
 
 type Props = { params: Promise<{ locale: string }> };
 
-// Live backend data — render per request, never at build time.
+// The shell renders per request; the business data itself is fetched
+// client-side (see DashboardPage) because the access token lives in
+// browser localStorage.
 export const dynamic = "force-dynamic";
 
 // Tab title from the existing app.pages.dashboard.title message —
@@ -15,14 +17,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: t("title") };
 }
 
-// The Dashboard. Replaces the former placeholder. The page only
-// resolves the locale; data loading and section rendering live in
-// the DashboardPage server component (three parallel API calls,
-// independent failure handling).
+// The Dashboard. The page is a thin server shell (metadata + locale);
+// DashboardPage fetches the three datasets (persons, events,
+// event-assignments) in the browser, where the auth token lives, with
+// independent failure handling per section.
 export default async function Page({ params }: Props) {
   const { locale } = await params;
   setRequestLocale(locale);
-  const resolved = await getLocale();
 
-  return <DashboardPage locale={resolved} />;
+  return <DashboardPage />;
 }

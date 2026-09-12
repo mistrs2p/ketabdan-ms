@@ -1,4 +1,6 @@
-import { getTranslations } from "next-intl/server";
+"use client";
+
+import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import {
   getPersons,
@@ -8,6 +10,7 @@ import {
   type EventRead,
   type PersonRead,
 } from "@/lib/api";
+import { useApiData } from "@/hooks/useApiData";
 import { eventStatusLabel, formatEventDateTime } from "@/components/events/eventStatus";
 import {
   buildDashboardEvents,
@@ -17,31 +20,30 @@ import {
 } from "./dashboardData";
 
 // The Dashboard — the manager's fast operational view ("what needs
-// attention"), not analytics. A Server Component: the three existing
-// list endpoints (persons, events, event-assignments) are fetched
-// once, in parallel, and aggregated in memory by dashboardData
-// (no dedicated dashboard endpoint exists and none is added). Each
-// fetch fails independently — a failed dataset degrades only its own
-// section with a localized unavailable state; the rest still renders.
-export async function DashboardPage({ locale }: { locale: string }) {
-  const t = await getTranslations("dashboard");
-  const tTitle = await getTranslations("app.pages.dashboard");
+// attention"), not analytics. A Client Component: the access token
+// lives in browser localStorage, which a server component cannot read
+// — a server-side fetch would go out unauthenticated and fail 401.
+// The three existing list endpoints (persons, events,
+// event-assignments) are fetched once, in parallel, on mount and
+// aggregated in memory by dashboardData (no dedicated dashboard
+// endpoint exists and none is added). Each fetch fails independently
+// — a failed dataset degrades only its own section with a localized
+// unavailable state; the rest still renders.
+export function DashboardPage() {
+  const t = useTranslations("dashboard");
+  const tTitle = useTranslations("app.pages.dashboard");
+  const locale = useLocale();
 
-  const [personsResult, eventsResult, assignmentsResult] =
-    await Promise.allSettled([
-      getPersons(),
-      getEvents(),
-      getEventAssignments(),
-    ]);
+  const peopleState = useApiData(getPersons);
+  const eventsState = useApiData(getEvents);
+  const assignmentsState = useApiData(getEventAssignments);
 
   const people: PersonRead[] | undefined =
-    personsResult.status === "fulfilled" ? personsResult.value : undefined;
+    peopleState.status === "success" ? peopleState.data : undefined;
   const events: EventRead[] | undefined =
-    eventsResult.status === "fulfilled" ? eventsResult.value : undefined;
+    eventsState.status === "success" ? eventsState.data : undefined;
   const assignments: EventAssignmentRead[] | undefined =
-    assignmentsResult.status === "fulfilled"
-      ? assignmentsResult.value
-      : undefined;
+    assignmentsState.status === "success" ? assignmentsState.data : undefined;
 
   // Events + assignments together form the operational view. If
   // either fails, the event sections show their unavailable state; if
@@ -52,6 +54,25 @@ export async function DashboardPage({ locale }: { locale: string }) {
       ? buildDashboardEvents(events, assignments)
       : undefined;
   const peopleOverview = people !== undefined ? buildDashboardPeople(people) : undefined;
+
+  const loading =
+    peopleState.status === "loading" &&
+    eventsState.status === "loading" &&
+    assignmentsState.status === "loading";
+
+  if (loading) {
+    return (
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
+        <header className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold">{tTitle("title")}</h1>
+          <p className="text-muted-foreground">{t("description")}</p>
+        </header>
+        <p className="text-sm text-muted-foreground" role="status">
+          {t("loading")}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
@@ -99,7 +120,7 @@ export async function DashboardPage({ locale }: { locale: string }) {
 
 // --- Summary metrics -------------------------------------------------
 
-async function MetricsSection({
+function MetricsSection({
   people,
   events,
   dashboardEvents,
@@ -108,7 +129,7 @@ async function MetricsSection({
   events: EventRead[] | undefined;
   dashboardEvents: ReturnType<typeof buildDashboardEvents> | undefined;
 }) {
-  const t = await getTranslations("dashboard.metrics");
+  const t = useTranslations("dashboard.metrics");
   const cards: { label: string; value: string | number; error?: boolean }[] = [];
 
   if (people) {
@@ -146,15 +167,15 @@ async function MetricsSection({
 
 // --- Unassigned events (the operational exception) --------------------
 
-async function UnassignedEventsSection({
+function UnassignedEventsSection({
   unassigned,
   locale,
 }: {
   unassigned: EventRead[];
   locale: string;
 }) {
-  const t = await getTranslations("dashboard.unassigned");
-  const tStatus = await getTranslations("events.status");
+  const t = useTranslations("dashboard.unassigned");
+  const tStatus = useTranslations("events.status");
   const statusLabels: Record<string, string> = {
     DRAFT: tStatus("DRAFT"),
     SCHEDULED: tStatus("SCHEDULED"),
@@ -207,7 +228,7 @@ async function UnassignedEventsSection({
 
 // --- Upcoming events --------------------------------------------------
 
-async function UpcomingEventsSection({
+function UpcomingEventsSection({
   upcoming,
   available,
   locale,
@@ -216,8 +237,8 @@ async function UpcomingEventsSection({
   available: boolean;
   locale: string;
 }) {
-  const t = await getTranslations("dashboard.upcoming");
-  const tStatus = await getTranslations("events.status");
+  const t = useTranslations("dashboard.upcoming");
+  const tStatus = useTranslations("events.status");
   const statusLabels: Record<string, string> = {
     DRAFT: tStatus("DRAFT"),
     SCHEDULED: tStatus("SCHEDULED"),
@@ -289,13 +310,13 @@ async function UpcomingEventsSection({
 
 // --- Event status snapshot ---------------------------------------------
 
-async function StatusSnapshotSection({
+function StatusSnapshotSection({
   events,
 }: {
   events: EventRead[] | undefined;
 }) {
-  const t = await getTranslations("dashboard.statusSnapshot");
-  const tStatus = await getTranslations("events.status");
+  const t = useTranslations("dashboard.statusSnapshot");
+  const tStatus = useTranslations("events.status");
   const statusLabels: Record<string, string> = {
     DRAFT: tStatus("DRAFT"),
     SCHEDULED: tStatus("SCHEDULED"),
@@ -339,12 +360,12 @@ async function StatusSnapshotSection({
 
 // --- People overview ----------------------------------------------------
 
-async function PeopleSection({
+function PeopleSection({
   people,
 }: {
   people: ReturnType<typeof buildDashboardPeople> | undefined;
 }) {
-  const t = await getTranslations("dashboard.people");
+  const t = useTranslations("dashboard.people");
 
   if (people === undefined) {
     return (
@@ -400,8 +421,8 @@ async function PeopleSection({
 
 // --- Actions -------------------------------------------------------------
 
-async function ActionsSection() {
-  const t = await getTranslations("dashboard.actions");
+function ActionsSection() {
+  const t = useTranslations("dashboard.actions");
 
   const actions = [
     { href: "/people", label: t("viewPeople"), primary: false },

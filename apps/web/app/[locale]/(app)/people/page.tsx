@@ -4,7 +4,9 @@ import { PeoplePage } from "@/components/people/PeoplePage";
 
 type Props = { params: Promise<{ locale: string }> };
 
-// Live backend data — render per request, never at build time.
+// The shell renders per request; the business data itself is fetched
+// client-side (see PeoplePage) because the access token lives in
+// browser localStorage.
 export const dynamic = "force-dynamic";
 
 // Tab title from the existing app.pages.people.title message.

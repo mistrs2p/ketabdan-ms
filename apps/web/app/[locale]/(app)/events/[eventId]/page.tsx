@@ -1,77 +1,32 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Metadata } from "next";
-import {
-  getEvent,
-  getPersons,
-  getEventAssignments,
-  ApiError,
-  type EventRead,
-  type PersonRead,
-  type EventAssignmentRead,
-} from "@/lib/api";
-import { EventDetail, EventDataError } from "@/components/events/EventDetail";
-import { EventNotFound } from "@/components/events/EventNotFound";
+import { EventDetailLoader } from "@/components/events/EventDetailLoader";
 
 type Props = { params: Promise<{ locale: string; eventId: string }> };
 
-// Live backend data — render per request, never at build time.
+// The shell renders per request; the business data itself is fetched
+// client-side (see EventDetailLoader) because the access token lives
+// in browser localStorage.
 export const dynamic = "force-dynamic";
 
 // Tab title — the section name (the event's own title is only known
-// after the fetch inside the page render; a metadata-time fetch would
-// duplicate it for no operational value).
+// after the client-side fetch; a metadata-time fetch would duplicate
+// it for no operational value).
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "app.pages.events" });
   return { title: t("title") };
 }
 
-// Event detail. The server fetches everything the screen needs once:
-// the event itself (GET /api/events/{event_id}), the assignments
-// (GET /api/event-assignments — there is no dedicated
-// /events/{id}/assignments endpoint; the list is filtered to this
-// event here), and the people for the assignment form's selector
-// (GET /api/persons). Each fetch fails independently: the event is
-// required (its failure replaces the page), while an assignments or
-// people failure degrades only that section.
+// Event detail. The page is a thin server shell (metadata + locale);
+// EventDetailLoader fetches the event, its assignments, and the people
+// for the assignment form in the browser, where the auth token lives.
+//
+// The `key` remounts the loader when the eventId in the URL changes,
+// so navigating between two event detail screens refetches.
 export default async function Page({ params }: Props) {
   const { locale, eventId } = await params;
   setRequestLocale(locale);
 
-  let event: EventRead;
-  try {
-    event = await getEvent(eventId);
-  } catch (e) {
-    const error = e instanceof ApiError ? e : new ApiError("server", String(e));
-    if (error.kind === "not-found") {
-      return <EventNotFound />;
-    }
-    // Network or server failure — localized error state.
-    return <EventDataError />;
-  }
-
-  // The event exists; assignments and people load independently and
-  // their failures render in place (EventDetail decides which section
-  // degrades). Both calls go out in parallel — neither depends on the
-  // other's result.
-  const [assignmentsResult, peopleResult] = await Promise.allSettled([
-    getEventAssignments(),
-    getPersons(),
-  ]);
-
-  const assignments: EventAssignmentRead[] | undefined =
-    assignmentsResult.status === "fulfilled"
-      ? assignmentsResult.value.filter((a) => a.event_id === event.id)
-      : undefined;
-
-  const people: PersonRead[] | undefined =
-    peopleResult.status === "fulfilled" ? peopleResult.value : undefined;
-
-  return (
-    <EventDetail
-      event={event}
-      initialAssignments={assignments}
-      people={people}
-    />
-  );
+  return <EventDetailLoader key={eventId} eventId={eventId} />;
 }

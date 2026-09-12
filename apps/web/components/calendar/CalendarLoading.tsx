@@ -1,10 +1,14 @@
-import { getTranslations } from "next-intl/server";
+"use client";
 
-// Loading skeleton for the Calendar route — mirrors the weekly grid
-// shape (toolbar, day headers, body) rather than a generic paragraph,
-// so the loading→loaded transition is calm.
-export async function CalendarLoading() {
-  const t = await getTranslations("calendar");
+import { useTranslations } from "next-intl";
+
+// Loading skeleton for the Calendar route — shown by loading.tsx
+// during navigation and by the Calendar screen itself while its
+// client-side fetch is in flight. Mirrors the weekly grid shape
+// (toolbar, day headers, body) rather than a generic paragraph, so
+// the loading→loaded transition is calm.
+export function CalendarLoading() {
+  const t = useTranslations("calendar");
 
   return (
     <div className="flex w-full flex-col gap-3" role="status" aria-label={t("loading")}>
