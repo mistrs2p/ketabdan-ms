@@ -1,6 +1,8 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import { formatUtcDate } from "@/lib/calendar";
+import { useCalendarSystem } from "@/lib/calendar";
 import { addDays } from "./weekMath";
 
 // Calendar toolbar: previous-week / today / next-week navigation plus
@@ -24,22 +26,20 @@ export function CalendarHeader({
   onToday: () => void;
 }) {
   const t = useTranslations("calendar");
+  const { system: calendarSystem } = useCalendarSystem();
 
   // UTC-anchored dates are formatted with timeZone "UTC" so the
-  // displayed day matches the date arithmetic. The Gregorian calendar
-  // is forced so the displayed dates stay on the same basis as the
-  // underlying ISO data — the runtime fa locale would otherwise render
-  // Persian-calendar day numbers (an implicit Jalali conversion this
-  // task must not introduce). Weekday names stay localized.
-  const rangeFormatter = new Intl.DateTimeFormat(
-    locale.match(/^fa/) ? "fa-u-ca-gregory" : locale,
-    {
-      dateStyle: "medium",
-      timeZone: "UTC",
-    },
-  );
+  // displayed day matches the date arithmetic. The calendar system is
+  // the viewer's display choice (Jalali labels the same instants);
+  // weekday names stay localized. The week ALWAYS advances on the
+  // Gregorian/ISO basis of the underlying data — only the labels
+  // switch.
   const weekEnd = addDays(weekStart, 6);
-  const rangeLabel = `${rangeFormatter.format(weekStart)} – ${rangeFormatter.format(weekEnd)}`;
+  const rangeLabel = `${formatUtcDate(weekStart, locale, calendarSystem, {
+    dateStyle: "medium",
+  })} – ${formatUtcDate(weekEnd, locale, calendarSystem, {
+    dateStyle: "medium",
+  })}`;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">

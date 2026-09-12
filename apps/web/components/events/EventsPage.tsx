@@ -5,6 +5,7 @@ import { getEvents, type EventRead } from "@/lib/api";
 import { useApiData } from "@/hooks/useApiData";
 import { Link } from "@/i18n/routing";
 import { eventStatusLabel, formatEventDateTime } from "./eventStatus";
+import { useCalendarSystem } from "@/lib/calendar";
 import { EventsErrorState } from "./EventsErrorState";
 import { EventsEmptyState } from "./EventsEmptyState";
 import { EventsLoading } from "./EventsLoading";
@@ -79,6 +80,7 @@ function EventsTable({
   statusLabels: Record<string, string>;
 }) {
   const t = useTranslations("events");
+  const { system: calendarSystem } = useCalendarSystem();
 
   return (
     <>
@@ -110,7 +112,7 @@ function EventsTable({
               <td className="px-4 py-3 font-medium">{event.title}</td>
               <td className="px-4 py-3 text-muted-foreground">{event.type}</td>
               <td className="px-4 py-3 text-muted-foreground">
-                {formatEventDateTime(event.planned_at, locale)}
+                {formatEventDateTime(event.planned_at, locale, calendarSystem)}
               </td>
               <td className="px-4 py-3">
                 <StatusBadge
@@ -146,7 +148,7 @@ function EventsTable({
               <dt className="text-muted-foreground">{t("table.type")}</dt>
               <dd>{event.type}</dd>
               <dt className="text-muted-foreground">{t("table.plannedAt")}</dt>
-              <dd>{formatEventDateTime(event.planned_at, locale)}</dd>
+              <dd>{formatEventDateTime(event.planned_at, locale, calendarSystem)}</dd>
             </dl>
             <div>
               <ViewAction

@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { routing } from "@/i18n/routing";
 import type { Locale } from "@/i18n/routing";
 import { AuthProvider } from "@/lib/auth";
+import { CalendarProvider } from "@/lib/calendar";
 import { themeInitScript } from "@/theme-init";
 import "../globals.css";
 
@@ -75,7 +76,14 @@ export default async function LocaleLayout({
               provider so the login UI can translate; every page, client
               or server, renders beneath it. Client component; children
               stay server-rendered where they were before. */}
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            {/* Calendar-system preference (Jalali vs Gregorian
+                display) — same client-boundary pattern as auth: client
+                provider, server-rendered children beneath it. Default
+                follows the locale; the persisted override applies
+                after mount. */}
+            <CalendarProvider>{children}</CalendarProvider>
+          </AuthProvider>
         </NextIntlClientProvider>
       </body>
     </html>

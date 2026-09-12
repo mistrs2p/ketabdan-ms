@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import { CalendarToggle } from "@/components/CalendarToggle";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MobileNavigation } from "./MobileNavigation";
@@ -22,6 +23,7 @@ export function Header() {
       <div className="flex items-center gap-2">
         <UserMenu />
         <ThemeToggle />
+        <CalendarToggle />
         <LocaleSwitcher />
       </div>
     </header>

@@ -12,6 +12,18 @@
       "light": "روشن",
       "dark": "تیره"
     },
+    "calendarToggle": {
+      "label": "تقویم",
+      "persian": "شمسی",
+      "gregorian": "میلادی"
+    },
+    "dateTimePicker": {
+      "placeholder": "انتخاب تاریخ و ساعت",
+      "previousMonth": "ماه قبل",
+      "nextMonth": "ماه بعد",
+      "today": "امروز",
+      "time": "ساعت"
+    },
     "language": "زبان"
   },
   "nav": {
