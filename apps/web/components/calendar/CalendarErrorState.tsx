@@ -1,11 +1,13 @@
-import { getTranslations } from "next-intl/server";
+"use client";
+
+import { useTranslations } from "next-intl";
 import { apiErrorMessage, type ApiError } from "@/lib/api";
 
 // Error state for the Calendar. Uses the ApiError abstraction:
 // network vs server failures get distinct, actionable messages; no
 // stack traces or technical detail leak beyond the classified message.
-export async function CalendarErrorState({ error }: { error: ApiError }) {
-  const t = await getTranslations("calendar.error");
+export function CalendarErrorState({ error }: { error: ApiError }) {
+  const t = useTranslations("calendar.error");
 
   const message = error.kind === "network" ? t("network") : t("server");
 

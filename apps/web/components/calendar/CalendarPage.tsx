@@ -1,34 +1,30 @@
-import { getTranslations } from "next-intl/server";
-import { getEvents, ApiError, type EventRead } from "@/lib/api";
+"use client";
+
+import { useLocale, useTranslations } from "next-intl";
+import { getEvents } from "@/lib/api";
+import { useApiData } from "@/hooks/useApiData";
 import { WeekCalendar } from "./WeekCalendar";
 import { CalendarEmptyState } from "./CalendarEmptyState";
 import { CalendarErrorState } from "./CalendarErrorState";
+import { CalendarLoading } from "./CalendarLoading";
 import { todayIsoDate, weekStartDowForLocale } from "./weekMath";
 
-// The Calendar screen (server side). Loads all events once via the
-// typed API layer (getEvents — backend ordering preserved) and hands
-// them to the client WeekCalendar for week navigation and graphical
-// rendering. "Today" and the locale's week-start weekday are computed
-// here and passed as props, so the client's first render matches the
-// server HTML regardless of timezone differences.
+// The Calendar screen. A Client Component: the access token lives in
+// browser localStorage, which a server component cannot read — a
+// server-side fetch would go out unauthenticated and fail 401. All
+// events are loaded once on mount (getEvents — backend ordering
+// preserved) and handed to the WeekCalendar for week navigation and
+// graphical rendering.
 //
-// States: loading via sibling loading.tsx (streaming), error / empty
-// handled here, data in WeekCalendar.
-export async function CalendarPage({ locale }: { locale: string }) {
-  const t = await getTranslations("calendar");
-  const tTitle = await getTranslations("app.pages.calendar");
-
-  let events: EventRead[] = [];
-  let error: ApiError | undefined;
-  try {
-    events = await getEvents();
-  } catch (e) {
-    if (e instanceof ApiError) {
-      error = e;
-    } else {
-      error = new ApiError("server", String(e));
-    }
-  }
+// "Today" and the locale's week-start weekday are computed only when
+// the fetched data renders, which happens post-hydration in the
+// browser — the user's own timezone, never the server's, so no
+// hydration mismatch is possible.
+export function CalendarPage() {
+  const t = useTranslations("calendar");
+  const tTitle = useTranslations("app.pages.calendar");
+  const locale = useLocale();
+  const state = useApiData(getEvents);
 
   return (
     <div className="flex w-full flex-col gap-6">
@@ -37,11 +33,16 @@ export async function CalendarPage({ locale }: { locale: string }) {
         <p className="text-muted-foreground">{t("description")}</p>
       </header>
 
-      {error ? <CalendarErrorState error={error} /> : null}
-      {!error && events.length === 0 ? <CalendarEmptyState /> : null}
-      {!error && events.length > 0 ? (
+      {state.status === "loading" ? <CalendarLoading /> : null}
+      {state.status === "error" ? (
+        <CalendarErrorState error={state.error} />
+      ) : null}
+      {state.status === "success" && state.data.length === 0 ? (
+        <CalendarEmptyState />
+      ) : null}
+      {state.status === "success" && state.data.length > 0 ? (
         <WeekCalendar
-          events={events}
+          events={state.data}
           locale={locale}
           today={todayIsoDate()}
           weekStartDow={weekStartDowForLocale(locale)}

@@ -1,10 +1,13 @@
-import { getTranslations } from "next-intl/server";
+"use client";
 
-// Loading skeleton for the People list (shown via loading.tsx while the
-// page's server component fetches). Mirrors the table layout so the
-// transition is calm; text makes the state explicit without color cues.
-export async function PeopleLoading() {
-  const t = await getTranslations("people");
+import { useTranslations } from "next-intl";
+
+// Loading skeleton for the People routes. Shown by loading.tsx during
+// navigation and by the People screen itself while its client-side
+// fetch is in flight. Mirrors the table layout so the transition is
+// calm; text makes the state explicit without color cues.
+export function PeopleLoading() {
+  const t = useTranslations("people");
 
   return (
     <div

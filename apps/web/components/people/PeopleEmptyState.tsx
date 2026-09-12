@@ -1,10 +1,12 @@
-import { getTranslations } from "next-intl/server";
+"use client";
+
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 
 // Empty state for the People list (GET /api/persons → []). The add CTA
 // links to the real Create Person flow (/people/new).
-export async function PeopleEmptyState() {
-  const t = await getTranslations("people");
+export function PeopleEmptyState() {
+  const t = useTranslations("people");
 
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-surface p-10 text-center">

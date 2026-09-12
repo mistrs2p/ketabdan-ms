@@ -1,10 +1,12 @@
-import { getTranslations } from "next-intl/server";
+"use client";
+
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 
 // Empty state for the Events list (GET /api/events → []). The add CTA
 // links to the Create Event flow (/events/new).
-export async function EventsEmptyState() {
-  const t = await getTranslations("events");
+export function EventsEmptyState() {
+  const t = useTranslations("events");
 
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-surface p-10 text-center">

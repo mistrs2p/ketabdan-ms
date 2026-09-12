@@ -1,9 +1,12 @@
-import { getTranslations } from "next-intl/server";
+"use client";
 
-// Loading UI for the Create Person route — shown while the page's
-// server component fetches the role reference data (GET /api/roles).
-export async function PersonCreateLoading() {
-  const t = await getTranslations("people.create");
+import { useTranslations } from "next-intl";
+
+// Loading UI for the Create Person route — shown by loading.tsx during
+// navigation and by the Create Person screen itself while its
+// client-side role reference fetch (GET /api/roles) is in flight.
+export function PersonCreateLoading() {
+  const t = useTranslations("people.create");
 
   return (
     <div

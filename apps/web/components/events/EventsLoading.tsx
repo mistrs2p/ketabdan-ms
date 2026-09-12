@@ -1,10 +1,13 @@
-import { getTranslations } from "next-intl/server";
+"use client";
 
-// Loading skeleton for the Events routes (shown via loading.tsx while
-// a page's server component fetches). Mirrors the list layout so the
-// transition is calm; text makes the state explicit without color cues.
-export async function EventsLoading() {
-  const t = await getTranslations("events");
+import { useTranslations } from "next-intl";
+
+// Loading skeleton for the Events routes. Shown by loading.tsx during
+// navigation and by the Events screen itself while its client-side
+// fetch is in flight. Mirrors the list layout so the transition is
+// calm; text makes the state explicit without color cues.
+export function EventsLoading() {
+  const t = useTranslations("events");
 
   return (
     <div

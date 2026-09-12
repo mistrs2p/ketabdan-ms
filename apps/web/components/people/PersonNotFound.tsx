@@ -1,13 +1,15 @@
-import { getTranslations } from "next-intl/server";
+"use client";
+
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 
 // Not-found state for a syntactically valid personId with no matching
 // person in GET /api/persons. The raw id is deliberately not shown as
 // the primary message — a plain localized "person not found" with a
 // way back to the People list.
-export async function PersonNotFound() {
-  const t = await getTranslations("people.detail.notFound");
-  const tPeople = await getTranslations("app.pages.people");
+export function PersonNotFound() {
+  const t = useTranslations("people.detail.notFound");
+  const tPeople = useTranslations("app.pages.people");
 
   return (
     <div

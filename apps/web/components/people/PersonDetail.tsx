@@ -1,16 +1,17 @@
-import { getTranslations } from "next-intl/server";
+"use client";
+
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import type { PersonRead } from "@/lib/api";
 
-// Person detail screen. A Server Component: everything here is read-only
-// display of the PersonRead contract. The Edit control is deliberately
-// disabled — no backend update contract exists (Phase 3 frozen), and
-// nothing may fake persistence. Status is text (not color-only); role
-// names come from backend reference data; phone null shows the localized
-// "not provided" value.
-export async function PersonDetail({ person }: { person: PersonRead }) {
-  const t = await getTranslations("people.detail");
-  const tPeople = await getTranslations("app.pages.people");
+// Person detail screen. Read-only display of the PersonRead contract.
+// The Edit control is deliberately disabled — no backend update
+// contract exists (Phase 3 frozen), and nothing may fake persistence.
+// Status is text (not color-only); role names come from backend
+// reference data; phone null shows the localized "not provided" value.
+export function PersonDetail({ person }: { person: PersonRead }) {
+  const t = useTranslations("people.detail");
+  const tPeople = useTranslations("app.pages.people");
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
@@ -104,8 +105,8 @@ export async function PersonDetail({ person }: { person: PersonRead }) {
 // List fetch failure while loading the person (GET /api/persons failed).
 // Network vs server wording comes from the ApiError kind at the call
 // site; this component renders the generic data-error state.
-export async function PersonDataError() {
-  const t = await getTranslations("people.detail.error");
+export function PersonDataError() {
+  const t = useTranslations("people.detail.error");
 
   return (
     <div

@@ -1,4 +1,6 @@
-import { getTranslations } from "next-intl/server";
+"use client";
+
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import type { PersonRead } from "@/lib/api";
 
@@ -8,8 +10,8 @@ import type { PersonRead } from "@/lib/api";
 // reference data) — never hard-coded. Status is shown as text
 // (not color-only). The View action links to the person detail page
 // via the localized routing helper.
-export async function PeopleTable({ people }: { people: PersonRead[] }) {
-  const t = await getTranslations("people");
+export function PeopleTable({ people }: { people: PersonRead[] }) {
+  const t = useTranslations("people");
 
   return (
     <>

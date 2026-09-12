@@ -1,4 +1,6 @@
-import { getTranslations } from "next-intl/server";
+"use client";
+
+import { useTranslations } from "next-intl";
 import { apiErrorMessage, type ApiError } from "@/lib/api";
 
 // Error state for the People list. Uses the Task-4.1 ApiError
@@ -6,8 +8,8 @@ import { apiErrorMessage, type ApiError } from "@/lib/api";
 // messages; 404/422 are not expected on this list endpoint and fall
 // back to the generic server wording. No stack traces or technical
 // detail leak — only the classified message.
-export async function PeopleErrorState({ error }: { error: ApiError }) {
-  const t = await getTranslations("people.error");
+export function PeopleErrorState({ error }: { error: ApiError }) {
+  const t = useTranslations("people.error");
 
   const message =
     error.kind === "network" ? t("network") : t("server");
