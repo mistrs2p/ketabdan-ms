@@ -59,8 +59,9 @@ export function addDays(date: Date, n: number): Date {
  * Week-start weekday (0=Sun … 6=Sat) for a locale, from the runtime's
  * Intl week data — a *presentation* choice, not a business rule: fa
  * conventionally starts on Saturday, en typically on Sunday/Monday
- * depending on region. The underlying event data stays Gregorian/ISO
- * (no Jalali conversion). Fallback: Saturday for fa, Sunday otherwise.
+ * depending on region. Week arithmetic stays Gregorian/ISO regardless
+ * of the display calendar system; Fallback: Saturday for fa, Sunday
+ * otherwise.
  */
 export function weekStartDowForLocale(locale: string): number {
   try {

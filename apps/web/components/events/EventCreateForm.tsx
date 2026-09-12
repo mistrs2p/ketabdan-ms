@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
 import { createEvent, ApiError, validationIssues, type EventCreate } from "@/lib/api";
+import { DateTimePicker } from "@/components/datetime/DateTimePicker";
 
 // The Create Event form. A Client Component because it owns interactive
 // state and submission. Fields are exactly the backend EventCreate
@@ -12,13 +13,15 @@ import { createEvent, ApiError, validationIssues, type EventCreate } from "@/lib
 // timezone-aware). No status control: creation always produces DRAFT
 // server-side, and the frontend never sends one.
 //
-// Datetime handling: the datetime-local input yields a naive local
-// string; on submit it is converted with the user's current browser
-// offset into an ISO-8601 instant WITH explicit offset (e.g.
+// Datetime handling: the DateTimePicker yields a local Date; on submit
+// it is serialized with the user's current browser offset into an
+// ISO-8601 instant WITH explicit offset (e.g.
 // "2026-09-20T17:00:00+03:30") — the backend rejects naive values
 // (422). This is a technical serialization choice, not a business
 // timezone rule. Past dates are NOT rejected (TBD-D27 — no invented
-// rule).
+// rule). The picker's month grid follows the viewer's calendar-system
+// preference (Jalali labels over the same days); the submitted instant
+// is unaffected by that choice.
 export function EventCreateForm() {
   const t = useTranslations("events.create");
   const tEvents = useTranslations("app.pages.events");
@@ -26,7 +29,7 @@ export function EventCreateForm() {
 
   const [title, setTitle] = useState("");
   const [type, setType] = useState("");
-  const [plannedAt, setPlannedAt] = useState("");
+  const [plannedAt, setPlannedAt] = useState<Date | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{
     title?: string;
@@ -53,7 +56,7 @@ export function EventCreateForm() {
     const errors: typeof fieldErrors = {};
     if (title.trim() === "") errors.title = t("validation.titleRequired");
     if (type.trim() === "") errors.type = t("validation.typeRequired");
-    if (plannedAt === "") errors.plannedAt = t("validation.plannedAtRequired");
+    if (plannedAt === null) errors.plannedAt = t("validation.plannedAtRequired");
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setFormError(undefined);
@@ -61,15 +64,18 @@ export function EventCreateForm() {
     }
     setFieldErrors({});
 
-    // Serialize to a timezone-aware ISO-8601 instant: parse the naive
-    // local datetime, then emit it with the browser's current offset.
-    // toISOString() would silently convert to UTC (still valid, but
-    // the explicit-offset form keeps the wall-clock the user entered).
-    const localDate = new Date(plannedAt);
+    // The early return above guarantees every field is present; this
+    // guard only makes the narrowing explicit for the serializer.
+    if (plannedAt === null) return;
+
+    // Serialize the picked local Date as a timezone-aware ISO-8601
+    // instant with the browser's current offset. toISOString() would
+    // silently convert to UTC (still valid, but the explicit-offset
+    // form keeps the wall-clock the user entered).
     const payload: EventCreate = {
       title: title.trim(),
       type: type.trim(),
-      planned_at: formatWithLocalOffset(localDate),
+      planned_at: formatWithLocalOffset(plannedAt),
     };
 
     setSubmitting(true);
@@ -202,23 +208,18 @@ export function EventCreateForm() {
               {" *"}
             </span>
           </label>
-          <input
+          <DateTimePicker
             id="event-planned-at"
-            name="planned_at"
-            type="datetime-local"
             value={plannedAt}
-            onChange={(e) => {
-              setPlannedAt(e.target.value);
+            onChange={(next) => {
+              setPlannedAt(next);
               clearFieldError("plannedAt");
             }}
-            required
-            aria-required="true"
-            aria-invalid={fieldErrors.plannedAt ? true : undefined}
-            aria-describedby={
+            disabled={submitting}
+            invalid={fieldErrors.plannedAt ? true : false}
+            describedBy={
               fieldErrors.plannedAt ? "event-planned-at-error" : undefined
             }
-            disabled={submitting}
-            className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
           />
           {fieldErrors.plannedAt ? (
             <p

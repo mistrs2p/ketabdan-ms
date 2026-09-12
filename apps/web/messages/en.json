@@ -12,6 +12,18 @@
       "light": "Light",
       "dark": "Dark"
     },
+    "calendarToggle": {
+      "label": "Calendar system",
+      "persian": "Jalali",
+      "gregorian": "Gregorian"
+    },
+    "dateTimePicker": {
+      "placeholder": "Select date and time",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "today": "Today",
+      "time": "Time"
+    },
     "language": "Language"
   },
   "nav": {

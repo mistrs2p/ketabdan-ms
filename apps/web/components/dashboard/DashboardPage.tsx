@@ -11,6 +11,7 @@ import {
   type PersonRead,
 } from "@/lib/api";
 import { useApiData } from "@/hooks/useApiData";
+import { useCalendarSystem } from "@/lib/calendar";
 import { eventStatusLabel, formatEventDateTime } from "@/components/events/eventStatus";
 import {
   buildDashboardEvents,
@@ -176,6 +177,7 @@ function UnassignedEventsSection({
 }) {
   const t = useTranslations("dashboard.unassigned");
   const tStatus = useTranslations("events.status");
+  const { system: calendarSystem } = useCalendarSystem();
   const statusLabels: Record<string, string> = {
     DRAFT: tStatus("DRAFT"),
     SCHEDULED: tStatus("SCHEDULED"),
@@ -211,7 +213,7 @@ function UnassignedEventsSection({
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-sm font-medium">{event.title}</span>
                   <span className="text-xs text-muted-foreground">
-                    {formatEventDateTime(event.planned_at, locale)}
+                    {formatEventDateTime(event.planned_at, locale, calendarSystem)}
                   </span>
                 </span>
                 <span className="inline-flex w-fit items-center rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
@@ -239,6 +241,7 @@ function UpcomingEventsSection({
 }) {
   const t = useTranslations("dashboard.upcoming");
   const tStatus = useTranslations("events.status");
+  const { system: calendarSystem } = useCalendarSystem();
   const statusLabels: Record<string, string> = {
     DRAFT: tStatus("DRAFT"),
     SCHEDULED: tStatus("SCHEDULED"),
@@ -287,7 +290,7 @@ function UpcomingEventsSection({
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-sm font-medium">{event.title}</span>
                   <span className="text-xs text-muted-foreground">
-                    {event.type} · {formatEventDateTime(event.planned_at, locale)}
+                    {event.type} · {formatEventDateTime(event.planned_at, locale, calendarSystem)}
                   </span>
                 </span>
                 <span className="flex w-fit items-center gap-2">

@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { EventRead } from "@/lib/api";
+import { calendarFormatter } from "@/lib/calendar";
+import { useCalendarSystem } from "@/lib/calendar";
 import { addDays, isoOf } from "./weekMath";
 import { CalendarEvent } from "./CalendarEvent";
 
@@ -48,6 +50,7 @@ export function CalendarGrid({
 }) {
   const t = useTranslations("calendar");
   const tStatus = useTranslations("events.status");
+  const { system: calendarSystem } = useCalendarSystem();
 
   // Event bucketing uses the VIEWER's local timezone, which can differ
   // from the server's — positioning only after mount guarantees the
@@ -83,21 +86,17 @@ export function CalendarGrid({
   );
   const dayFormatter = useMemo(
     () =>
-      // Gregorian calendar forced for fa (fa-u-ca-gregory) so day
-      // numbers stay on the ISO basis of the underlying data — the
-      // runtime fa default is the Persian calendar, which would be an
-      // implicit Jalali conversion this task must not introduce.
-      // Weekday names stay localized. UTC anchored: the displayed day
-      // matches the week arithmetic.
-      new Intl.DateTimeFormat(
-        locale.match(/^fa/) ? "fa-u-ca-gregory" : locale,
-        {
-          weekday: "short",
-          day: "numeric",
-          timeZone: "UTC",
-        },
-      ),
-    [locale],
+      // Calendar system is the viewer's display choice (Jalali labels
+      // the same UTC-anchored days); weekday names stay localized.
+      // UTC anchored: the displayed day matches the week arithmetic.
+      // The week itself always advances on the Gregorian/ISO basis of
+      // the underlying data.
+      calendarFormatter(locale, calendarSystem, {
+        weekday: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      }),
+    [locale, calendarSystem],
   );
 
   // Per-day layout: bucket events by local calendar day, convert the

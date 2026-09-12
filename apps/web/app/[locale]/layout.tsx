@@ -1,12 +1,35 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { routing } from "@/i18n/routing";
 import type { Locale } from "@/i18n/routing";
 import { AuthProvider } from "@/lib/auth";
+import { CalendarProvider } from "@/lib/calendar";
 import { themeInitScript } from "@/theme-init";
 import "../globals.css";
+
+// Project fonts, self-hosted as variable woff2 files (no external
+// requests at runtime, no CDN dependency). Both are loaded once here
+// and exposed as CSS variables; globals.css decides which one leads
+// the stack per language (fa → Vazirmatn first, en → Inter first), so
+// each locale gets its intended primary face while the other font and
+// the system stack stay as fallbacks.
+const vazirmatn = localFont({
+  src: "../fonts/Vazirmatn-Variable.woff2",
+  variable: "--font-vazirmatn",
+  display: "swap",
+  weight: "100 900",
+});
+
+const inter = localFont({
+  src: "../fonts/InterVariable.woff2",
+  variable: "--font-inter",
+  display: "swap",
+  weight: "100 900",
+});
+
 export const metadata: Metadata = {
   title: {
     default: "Ketabdaneh",
@@ -38,7 +61,12 @@ export default async function LocaleLayout({
   const messages = await getMessages();
 
   return (
-    <html lang={locale} dir={direction} suppressHydrationWarning>
+    <html
+      lang={locale}
+      dir={direction}
+      suppressHydrationWarning
+      className={`${vazirmatn.variable} ${inter.variable}`}
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
@@ -48,7 +76,14 @@ export default async function LocaleLayout({
               provider so the login UI can translate; every page, client
               or server, renders beneath it. Client component; children
               stay server-rendered where they were before. */}
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            {/* Calendar-system preference (Jalali vs Gregorian
+                display) — same client-boundary pattern as auth: client
+                provider, server-rendered children beneath it. Default
+                follows the locale; the persisted override applies
+                after mount. */}
+            <CalendarProvider>{children}</CalendarProvider>
+          </AuthProvider>
         </NextIntlClientProvider>
       </body>
     </html>

@@ -8,6 +8,7 @@ import type {
   PersonRead,
 } from "@/lib/api";
 import { eventStatusLabel, formatEventDateTime } from "./eventStatus";
+import { useCalendarSystem } from "@/lib/calendar";
 import { EventAssignments } from "./EventAssignments";
 
 // Event detail screen. The four business fields of the EventRead
@@ -36,6 +37,7 @@ export function EventDetail({
   const tEvents = useTranslations("app.pages.events");
   const tError = useTranslations("events.assignments");
   const locale = useLocale();
+  const { system: calendarSystem } = useCalendarSystem();
 
   const statusLabels: Record<string, string> = {
     DRAFT: tStatus("DRAFT"),
@@ -64,7 +66,7 @@ export function EventDetail({
             {t("plannedAt")}
           </dt>
           <dd className="text-sm">
-            {formatEventDateTime(event.planned_at, locale)}
+            {formatEventDateTime(event.planned_at, locale, calendarSystem)}
           </dd>
         </div>
         <div className="flex flex-1 flex-col gap-1 p-4">
