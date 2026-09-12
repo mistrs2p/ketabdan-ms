@@ -15,11 +15,22 @@
   --color-primary-foreground: #ffffff;
   --color-muted-foreground: #64748b;
 
-  /* System font stack — works for both Persian and English; swap to a
-     project font later by changing only this variable. */
+  /* Project fonts (self-hosted variable woff2, wired in the locale
+     layout via next/font/local): Inter leads for Latin locales,
+     Vazirmatn leads for Persian — each keeps the other plus the
+     system stack as fallbacks. Persian digits (۰-۹) resolve from
+     Vazirmatn; the lang-scoped override below owns the choice. */
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Noto Naskh Arabic", Tahoma, Arial, sans-serif;
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+/* Persian pages: Vazirmatn is the primary face for both its Arabic
+   script and its Latin glyphs. */
+html[lang="fa"] {
+  --font-sans:
+    var(--font-vazirmatn), var(--font-inter), ui-sans-serif,
+    system-ui, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
 [data-theme="dark"] {
